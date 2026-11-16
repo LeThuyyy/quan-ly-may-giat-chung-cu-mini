@@ -52,4 +52,4 @@
 
 ## Tiêu chí hoàn thành MVP
 
-Một tòa thử nghiệm có thể vận hành 1–3 máy, cư dân được duyệt xem vị trí và ETA có điều kiện, bật/tắt sẵn sàng trong lúc chờ mà không mất chỗ, thao tác bàn giao trên điện thoại; quản lý xử lý máy lỗi; không trùng lượt giữ hoặc mất ưu tiên khi xảy ra thao tác đồng thời. Chỉ giao cho người đang sẵn sàng theo giờ dự kiến để chống người quên lên; chỉ cho bắt đầu giặt sau khi người được giao xác nhận tình trạng máy tại chỗ. Máy đã được báo lỗi phải chờ xử lý, không tự khai báo trống.
+Một tòa thử nghiệm có thể cấu hình số máy riêng (bản thử hỗ trợ 1–30, tòa nhỏ thường 1–3), cư dân được duyệt xem vị trí và ETA có điều kiện, bật/tắt sẵn sàng trong lúc chờ mà không mất chỗ, thao tác bàn giao trên điện thoại; quản lý xử lý máy lỗi; không trùng lượt giữ hoặc mất ưu tiên khi xảy ra thao tác đồng thời. Chỉ giao cho người đang sẵn sàng theo giờ dự kiến để chống người quên lên; chỉ cho bắt đầu giặt sau khi người được giao xác nhận tình trạng máy tại chỗ. Máy đã được báo lỗi phải chờ xử lý, không tự khai báo trống.

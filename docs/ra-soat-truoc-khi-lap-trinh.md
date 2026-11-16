@@ -4,7 +4,7 @@ Tài liệu này phân biệt **đã thống nhất** từ đặc tả/trao đ�
 
 ## I. Nền tảng đã thống nhất
 
-- Mỗi tòa có **một hàng đợi chung** cho 1–3 máy; không đặt lịch trước hoặc chọn giờ nhắc.
+- Mỗi tòa có **một hàng đợi chung** cho số máy do quản lý tòa chọn (thường 1–3, bản thử hỗ trợ 1–30); không đặt lịch trước hoặc chọn giờ nhắc.
 - Cư dân chọn Sẵn sàng/Chưa sẵn sàng lúc vào hàng; có thể đổi khi còn chờ. Người chưa sẵn sàng giữ vị trí nhưng được bỏ qua; họ không nhận hạn 8 phút. Nếu không ai sẵn sàng, máy chờ.
 - Chỉ giao cho người sẵn sàng theo thứ tự hàng; khi giao máy bắt đầu ngay hạn 8 phút, không chờ người đó lên hoặc nhận thông báo. Quên lên/hết hạn thì mất lượt; báo máy không dùng được trong hạn thì không bị phạt và được trở lại cùng hàng.
 - Người đã được giao máy không thể tắt Sẵn sàng để né hạn; có thể Nhường lượt. Giao máy mới không thu hồi máy đã giao cho người khác.

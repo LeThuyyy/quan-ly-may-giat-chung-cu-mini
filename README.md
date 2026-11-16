@@ -1,6 +1,6 @@
 # Quản lý máy giặt chung cư mini
 
-Dự án web ưu tiên giao diện điện thoại cho một tòa có khoảng 1–3 máy giặt chung. Mỗi tòa có **một hàng đợi chung**; hệ thống giao máy khả dụng cho cư dân đủ điều kiện theo thứ tự, thay vì đặt lịch trước hoặc đặt giờ nhắc.
+Dự án web ưu tiên giao diện điện thoại; mỗi quản lý chọn số máy giặt riêng cho tòa của họ (mặc định vận hành nhỏ, bản thử hỗ trợ 1–30 máy). Mỗi tòa có **một hàng đợi chung**; hệ thống giao máy khả dụng cho cư dân đủ điều kiện theo thứ tự, thay vì đặt lịch trước hoặc đặt giờ nhắc.
 
 ## Tài liệu khởi đầu
 
@@ -21,11 +21,16 @@ Dự án web ưu tiên giao diện điện thoại cho một tòa có khoảng 1
 
 ## Khởi chạy mã nguồn
 
-Khung ban đầu dùng **Next.js + React + TypeScript**. Trang chủ là màn giới thiệu tĩnh, **chưa đăng nhập, chưa lưu dữ liệu hay cấp máy thật**. `src/domain/queue/queue.ts` mới là hàm thuần đề xuất ghép người đang sẵn sàng với máy đủ điều kiện; ứng dụng thực tế phải lưu giao dịch nguyên tử ở máy chủ, không dùng hàm này một mình để cấp lượt.
+Đây là **bài tập lớn Java**: nghiệp vụ hướng đối tượng, phân quyền và API nằm trong `backend/` (**Java 21 + Spring Boot + Maven + H2**). Next.js/React/TypeScript ở `src/app` chỉ là khung giao diện tĩnh; **chưa kết nối API Java**. Backend có đăng ký tài khoản, tạo tòa với **số máy do từng quản lý chọn** (1–30 ở bản thử), thêm máy, đánh dấu bảo trì, lời mời 7 ngày, duyệt thành viên, vào/rời hàng và bật/tắt Sẵn sàng. Không có cấp máy tự động, đồng hồ 8 phút, theo dõi mẻ giặt, ETA, đổi lượt hoặc chat.
 
 ```powershell
+# API Java (http://localhost:8080)
+mvn -f backend/pom.xml spring-boot:run
+# Kiểm thử Java
+mvn -f backend/pom.xml test
+# Giao diện tĩnh (http://localhost:3000), chạy ở terminal khác
 npm ci
 npm run dev
 ```
 
-Mở `http://localhost:3000`. Kiểm tra trước PR bằng `npm run check` và `npm run build`. CI chạy cùng các bước này. Tài liệu nghiệp vụ vẫn có quyết định chưa chốt; xem [rà soát trước khi lập trình](docs/ra-soat-truoc-khi-lap-trinh.md) trước khi làm backend giao lượt/bàn giao.
+H2 lưu file trong `.data/` của thư mục **đang chạy lệnh** (chạy từ gốc repo thì là `<repo>/.data/`); dữ liệu này không được commit. Chi tiết API và giới hạn bản thử ở [backend/README.md](backend/README.md). API hiện dùng HTTP Basic và **giữ CSRF bảo vệ**: gọi `GET /api/csrf` để nhận token/session, gửi header được trả về và cookie cùng mỗi yêu cầu POST/PATCH/DELETE. Chỉ dùng cho thử nghiệm cục bộ, chưa triển khai Internet; frontend chưa có form kết nối API hay xử lý đăng nhập. Java CI và frontend CI chạy độc lập. Xem [rà soát trước khi lập trình](docs/ra-soat-truoc-khi-lap-trinh.md) trước khi làm backend giao lượt/bàn giao.

@@ -11,6 +11,9 @@ build/
 .next/
 coverage/
 *.tsbuildinfo
+.data/
+backend/.data/
+backend/target/
 
 # Editor / OS
 .vscode/
