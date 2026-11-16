@@ -1,0 +1,28 @@
+name: Báo lỗi
+about: Báo lỗi có thể tái hiện
+labels: [bug]
+body:
+  - type: textarea
+    id: steps
+    attributes:
+      label: Các bước tái hiện
+      description: Không đưa thông tin cư dân thật hoặc token vào ảnh/log.
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Kết quả thực tế
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Kết quả mong đợi
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Môi trường
+      description: Trình duyệt, thiết bị, phiên bản; ghi rõ nếu lỗi liên quan đua trạng thái/hạn 8 phút.

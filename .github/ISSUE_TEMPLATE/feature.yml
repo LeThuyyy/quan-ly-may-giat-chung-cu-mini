@@ -1,0 +1,25 @@
+name: Tính năng
+about: Đề xuất tính năng và tiêu chí nghiệm thu
+labels: [enhancement]
+body:
+  - type: textarea
+    id: objective
+    attributes:
+      label: Vấn đề / mục tiêu
+      description: Ai gặp vấn đề gì, ở luồng nào?
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Hành vi mong muốn
+      description: Phân biệt quy tắc đã chốt với giả định/đề xuất cần duyệt.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Tình huống nghiệm thu
+      description: Ví dụ gồm trạng thái ban đầu, thao tác và kết quả mong đợi.
+    validations:
+      required: true
