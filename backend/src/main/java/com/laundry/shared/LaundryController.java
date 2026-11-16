@@ -3,9 +3,9 @@ package com.laundry.shared;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
 import org.springframework.http.HttpStatus;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 import java.util.List;
@@ -28,16 +28,20 @@ public class LaundryController {
     public record CreateBuildingRequest(@NotBlank @Size(max = 100) String name,
                                         @Min(1) @Max(30) int machineCount) {}
     public record AddMachineRequest(@NotBlank @Size(max = 60) String label) {}
-    public record ReadyRequest(boolean ready) {}
-    public record MaintenanceRequest(boolean maintenance) {}
+    public record ReadyRequest(@NotNull Boolean ready) {}
+    public record MaintenanceRequest(@NotNull Boolean maintenance) {}
     public record AccountView(UUID id, String username, String displayName) {}
 
-    @PostMapping("/accounts") @ResponseStatus(HttpStatus.CREATED) @Transactional
+    @PostMapping("/accounts") @ResponseStatus(HttpStatus.CREATED)
     public AccountView register(@Valid @RequestBody RegisterRequest request) {
         String username = request.username().trim().toLowerCase(java.util.Locale.ROOT);
         if (accounts.findByUsername(username).isPresent()) throw new ResponseStatusException(HttpStatus.CONFLICT, "Tên đăng nhập đã tồn tại");
-        Account account = accounts.save(new Account(username, passwords.encode(request.password()), request.displayName().trim()));
-        return new AccountView(account.getId(), account.getUsername(), account.getDisplayName());
+        try {
+            Account account = accounts.saveAndFlush(new Account(username, passwords.encode(request.password()), request.displayName().trim()));
+            return new AccountView(account.getId(), account.getUsername(), account.getDisplayName());
+        } catch (DataIntegrityViolationException conflict) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Tên đăng nhập đã tồn tại", conflict);
+        }
     }
 
     @GetMapping("/me")
@@ -61,14 +65,14 @@ public class LaundryController {
     }
     @PatchMapping("/buildings/{id}/machines/{machineId}")
     public void maintenance(Authentication auth, @PathVariable UUID id, @PathVariable UUID machineId,
-                            @RequestBody MaintenanceRequest request) { service.setMaintenance(auth.getName(), id, machineId, request.maintenance()); }
+                            @Valid @RequestBody MaintenanceRequest request) { service.setMaintenance(auth.getName(), id, machineId, request.maintenance()); }
     @PostMapping("/buildings/{id}/queue") @ResponseStatus(HttpStatus.CREATED)
-    public LaundryService.QueueView join(Authentication auth, @PathVariable UUID id, @RequestBody ReadyRequest request) {
+    public LaundryService.QueueView join(Authentication auth, @PathVariable UUID id, @Valid @RequestBody ReadyRequest request) {
         QueueEntry entry = service.join(auth.getName(), id, request.ready());
         return new LaundryService.QueueView(entry.getId(), entry.getAccountId(), entry.getDisplayName(), entry.getPosition(), entry.isReady());
     }
     @PatchMapping("/buildings/{id}/queue/me")
-    public void readiness(Authentication auth, @PathVariable UUID id, @RequestBody ReadyRequest request) {
+    public void readiness(Authentication auth, @PathVariable UUID id, @Valid @RequestBody ReadyRequest request) {
         service.setReady(auth.getName(), id, request.ready());
     }
     @DeleteMapping("/buildings/{id}/queue/me")

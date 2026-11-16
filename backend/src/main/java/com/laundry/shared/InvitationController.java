@@ -18,7 +18,8 @@ public class InvitationController {
     }
     @PostMapping("/invitations/{token}/join") @ResponseStatus(HttpStatus.ACCEPTED)
     public JoinView request(Authentication authentication, @PathVariable String token) {
-        return new JoinView(invitations.request(authentication.getName(), token), "PENDING");
+        InvitationService.JoinResult result = invitations.request(authentication.getName(), token);
+        return new JoinView(result.buildingId(), result.status());
     }
     @GetMapping("/buildings/{id}/members/pending")
     public List<InvitationService.MemberView> pending(Authentication authentication, @PathVariable UUID id) {
@@ -29,5 +30,5 @@ public class InvitationController {
         invitations.approve(authentication.getName(), id, accountId);
     }
     public record InviteView(String token) {}
-    public record JoinView(UUID buildingId, String status) {}
+    public record JoinView(UUID buildingId, Membership.Status status) {}
 }

@@ -6,7 +6,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface MachineRepository extends JpaRepository<Machine, UUID> {
-    List<Machine> findByBuilding_IdOrderByLabelAsc(UUID buildingId);
+    List<Machine> findByBuilding_IdOrderByDisplayOrderAsc(UUID buildingId);
     long countByBuilding_Id(UUID buildingId);
     boolean existsByBuilding_IdAndLabel(UUID buildingId, String label);
     Optional<Machine> findByIdAndBuilding_Id(UUID machineId, UUID buildingId);

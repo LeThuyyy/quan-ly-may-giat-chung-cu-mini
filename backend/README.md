@@ -11,7 +11,7 @@ mvn -f backend/pom.xml test
 mvn -f backend/pom.xml spring-boot:run
 ```
 
-API ở `http://localhost:8080/api`. File H2 ở `.data/` của thư mục đang chạy Maven, không commit. Đây là môi trường thử cục bộ; schema dùng `ddl-auto=update` để phát triển, **chưa có migration hay cấu hình triển khai Internet**. Có thể cấu hình `spring.datasource.url` khi chạy ở môi trường khác. Không bật H2 console.
+API chỉ lắng nghe trên `127.0.0.1:8080` trong cấu hình phát triển, tại `http://localhost:8080/api`. File H2 ở `.data/` của thư mục đang chạy Maven, không commit. Đây là môi trường thử cục bộ; schema dùng `ddl-auto=update` để phát triển, **chưa có migration hay cấu hình triển khai Internet**. Có thể cấu hình `spring.datasource.url` khi chạy ở môi trường khác. Không bật H2 console.
 
 ## API hiện có
 

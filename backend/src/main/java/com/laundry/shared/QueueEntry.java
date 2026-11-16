@@ -5,7 +5,10 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "queue_entries", indexes = @Index(name = "idx_queue_building", columnList = "building_id,position"))
+@Table(name = "queue_entries", indexes = {
+    @Index(name = "idx_queue_building", columnList = "building_id,position"),
+    @Index(name = "idx_queue_building_account", columnList = "building_id,account_id,active")
+})
 public class QueueEntry {
     @Id private UUID id;
     @ManyToOne(optional = false, fetch = FetchType.LAZY) private Building building;

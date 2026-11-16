@@ -29,7 +29,7 @@ public class LaundryService {
         Account manager = account(username);
         Building building = buildings.save(new Building(name.trim(), manager));
         memberships.save(new Membership(building, manager, Membership.Role.MANAGER, Membership.Status.APPROVED));
-        for (int number = 1; number <= machineCount; number++) machines.save(new Machine(building, "Máy " + number));
+        for (int number = 1; number <= machineCount; number++) machines.save(new Machine(building, "Máy " + number, number));
         return building;
     }
 
@@ -42,7 +42,7 @@ public class LaundryService {
         String cleaned = label.trim();
         if (cleaned.isBlank() || cleaned.length() > 60 || machines.existsByBuilding_IdAndLabel(buildingId, cleaned))
             throw bad("Tên máy không hợp lệ hoặc đã tồn tại");
-        return machines.save(new Machine(building, cleaned));
+        return machines.save(new Machine(building, cleaned, Math.toIntExact(machines.countByBuilding_Id(buildingId) + 1)));
     }
 
     @Transactional
@@ -59,11 +59,12 @@ public class LaundryService {
         Account user = requireMember(username, buildingId, false);
         if (queue.existsByBuilding_IdAndAccount_IdAndActiveTrue(buildingId, user.getId())) throw bad("Bạn đã ở trong hàng");
         // Historical rows retain positions. A new visit always joins at the end.
-        return queue.save(new QueueEntry(building, user, queue.countByBuilding_Id(buildingId) + 1, ready));
+        return queue.save(new QueueEntry(building, user, queue.maxPositionByBuildingId(buildingId) + 1, ready));
     }
 
     @Transactional
     public void setReady(String username, UUID buildingId, boolean ready) {
+        locked(buildingId);
         Account user = requireMember(username, buildingId, false);
         QueueEntry entry = queue.findByBuilding_IdAndAccount_IdAndActiveTrue(buildingId, user.getId())
             .orElseThrow(() -> bad("Bạn chưa ở trong hàng"));
@@ -72,6 +73,7 @@ public class LaundryService {
 
     @Transactional
     public void leave(String username, UUID buildingId) {
+        locked(buildingId);
         Account user = requireMember(username, buildingId, false);
         QueueEntry entry = queue.findByBuilding_IdAndAccount_IdAndActiveTrue(buildingId, user.getId())
             .orElseThrow(() -> bad("Bạn chưa ở trong hàng"));
@@ -83,17 +85,17 @@ public class LaundryService {
         requireMember(username, buildingId, false);
         Building building = buildings.findById(buildingId).orElseThrow(() -> missing("Không tìm thấy tòa"));
         return new BuildingView(building.getId(), building.getName(),
-            machines.findByBuilding_IdOrderByLabelAsc(buildingId).stream().map(m -> new MachineView(m.getId(), m.getLabel(), m.getStatus())).toList(),
+            machines.findByBuilding_IdOrderByDisplayOrderAsc(buildingId).stream()
+                .map(m -> new MachineView(m.getId(), m.getLabel(), m.getStatus())).toList(),
             queue.findByBuilding_IdAndActiveTrueOrderByPositionAsc(buildingId).stream()
                 .map(e -> new QueueView(e.getId(), e.getAccountId(), e.getDisplayName(), e.getPosition(), e.isReady())).toList());
     }
 
     @Transactional(readOnly = true)
     public List<BuildingSummary> myBuildings(String username) {
-        return memberships.findByAccount_Id(account(username).getId()).stream().map(m -> {
-            Building b = buildings.findById(m.getBuildingId()).orElseThrow();
-            return new BuildingSummary(b.getId(), b.getName(), m.getRole(), m.getStatus());
-        }).toList();
+        return memberships.findWithBuildingByAccountId(account(username).getId()).stream()
+            .map(m -> new BuildingSummary(m.getBuildingId(), m.getBuildingName(), m.getRole(), m.getStatus()))
+            .toList();
     }
 
     public Account account(String username) {

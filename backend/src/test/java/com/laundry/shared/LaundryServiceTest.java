@@ -3,7 +3,6 @@ package com.laundry.shared;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -33,6 +32,8 @@ class LaundryServiceTest {
         assertEquals(4, service.view(manager.getUsername(), b.getId()).machines().size());
         assertThrows(ResponseStatusException.class, () -> service.createBuilding(manager.getUsername(), "Sai", 0));
         assertThrows(ResponseStatusException.class, () -> service.createBuilding(manager.getUsername(), "Sai", 31));
+        Building many = service.createBuilding(manager.getUsername(), "Tòa nhiều", 12);
+        assertEquals("Máy 10", service.view(manager.getUsername(), many.getId()).machines().get(9).label());
     }
 
     @Test void residentNeedsApprovalAndCannotChangeMachines() {
@@ -60,10 +61,12 @@ class LaundryServiceTest {
         assertThrows(ResponseStatusException.class, () -> invitations.create(resident.getUsername(), building.getId()));
         String token = invitations.create(owner.getUsername(), building.getId());
         assertThrows(ResponseStatusException.class, () -> invitations.request(resident.getUsername(), "invalid"));
-        invitations.request(resident.getUsername(), token);
+        assertEquals(Membership.Status.PENDING, invitations.request(resident.getUsername(), token).status());
+        assertEquals(Membership.Status.PENDING, invitations.request(resident.getUsername(), token).status());
         assertEquals(1, invitations.pending(owner.getUsername(), building.getId()).size());
         assertThrows(ResponseStatusException.class, () -> service.join(resident.getUsername(), building.getId(), true));
         invitations.approve(owner.getUsername(), building.getId(), resident.getId());
+        assertEquals(Membership.Status.APPROVED, invitations.request(resident.getUsername(), token).status());
         service.join(resident.getUsername(), building.getId(), true);
         assertEquals(1, service.view(resident.getUsername(), building.getId()).queue().size());
     }

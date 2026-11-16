@@ -43,17 +43,19 @@ public class InvitationService {
         return token;
     }
     @Transactional
-    public UUID request(String username, String token) {
+    public JoinResult request(String username, String token) {
         if (token == null || !token.matches("[0-9a-f]{64}")) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Link không hợp lệ");
         Invitation invitation = invitations.findById(hash(token)).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
         if (!invitation.validAt(Instant.now())) throw new ResponseStatusException(HttpStatus.GONE, "Link đã hết hạn");
         Account account = laundry.account(username);
         UUID buildingId = invitation.getBuildingId();
-        if (memberships.findByBuilding_IdAndAccount_Id(buildingId, account.getId()).isEmpty()) {
-            Building building = buildings.findById(buildingId).orElseThrow();
-            memberships.save(new Membership(building, account, Membership.Role.RESIDENT, Membership.Status.PENDING));
+        // Serialize duplicate invitation submissions for this building.
+        Building building = buildings.findLockedById(buildingId).orElseThrow();
+        Membership member = memberships.findByBuilding_IdAndAccount_Id(buildingId, account.getId()).orElse(null);
+        if (member == null) {
+            member = memberships.save(new Membership(building, account, Membership.Role.RESIDENT, Membership.Status.PENDING));
         }
-        return buildingId;
+        return new JoinResult(buildingId, member.getStatus());
     }
     @Transactional(readOnly = true)
     public List<MemberView> pending(String username, UUID buildingId) {
@@ -78,5 +80,6 @@ public class InvitationService {
         if (member.getRole() != Membership.Role.MANAGER || member.getStatus() != Membership.Status.APPROVED)
             throw new ResponseStatusException(HttpStatus.FORBIDDEN);
     }
+    public record JoinResult(UUID buildingId, Membership.Status status) {}
     public record MemberView(UUID id, String displayName) {}
 }

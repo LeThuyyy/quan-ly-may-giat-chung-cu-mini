@@ -25,6 +25,7 @@ public class Membership {
     public UUID getId() { return id; }
     public UUID getAccountId() { return account.getId(); }
     public UUID getBuildingId() { return building.getId(); }
+    public String getBuildingName() { return building.getName(); }
     public Role getRole() { return role; }
     public Status getStatus() { return status; }
     public void approve() { status = Status.APPROVED; }

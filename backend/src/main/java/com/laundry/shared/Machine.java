@@ -10,17 +10,20 @@ public class Machine {
     @Id private UUID id;
     @ManyToOne(optional = false, fetch = FetchType.LAZY) private Building building;
     @Column(nullable = false, length = 60) private String label;
+    @Column(nullable = false) private int displayOrder;
     @Enumerated(EnumType.STRING) @Column(nullable = false) private Status status;
 
     protected Machine() {}
-    public Machine(Building building, String label) {
+    public Machine(Building building, String label, int displayOrder) {
         this.id = UUID.randomUUID();
         this.building = building;
         this.label = label;
+        this.displayOrder = displayOrder;
         this.status = Status.AVAILABLE;
     }
     public UUID getId() { return id; }
     public String getLabel() { return label; }
+    public int getDisplayOrder() { return displayOrder; }
     public Status getStatus() { return status; }
     public void setMaintenance(boolean maintenance) { status = maintenance ? Status.MAINTENANCE : Status.AVAILABLE; }
 }
