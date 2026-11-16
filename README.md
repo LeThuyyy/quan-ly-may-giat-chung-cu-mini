@@ -19,4 +19,13 @@ Dự án web ưu tiên giao diện điện thoại cho một tòa có khoảng 1
 - Khi vào hàng, cư dân chọn **Sẵn sàng nhận máy** hoặc **Chưa sẵn sàng**; trạng thái có thể đổi bằng một nút ngay trên trang tòa. Hệ thống chỉ giao cho người đang sẵn sàng theo thứ tự hàng, bỏ qua người chưa sẵn sàng mà không xóa vị trí của họ. Nếu không ai sẵn sàng, máy chờ chứ không đếm hạn cho ai.
 - Khi hệ thống giao máy cho người sẵn sàng, hạn bắt đầu giặt 8 phút chạy ngay từ thời điểm giao, không đợi họ lên xác nhận máy. Nếu họ lên và báo máy chưa dùng được trong hạn, lượt giữ được giải phóng và họ được trả về **cùng hàng đợi theo mốc thứ tự khi được giao**, không có vé ưu tiên nhảy lên đầu về sau. Nếu trong lúc giữ máy có người khác đổi lượt, cách áp dụng mốc thứ tự cần chốt theo [rà soát trước khi lập trình](docs/ra-soat-truoc-khi-lap-trinh.md). Cửa sổ tự lấy 10 phút diễn ra trước khi giao lượt; các mốc cấu hình theo tòa khi triển khai.
 
-Chưa chọn công nghệ hoặc khởi tạo mã nguồn để tránh khóa sớm kiến trúc trước khi chốt các quyết định nghiệp vụ ở cuối tài liệu phân tích.
+## Khởi chạy mã nguồn
+
+Khung ban đầu dùng **Next.js + React + TypeScript**. Trang chủ là màn giới thiệu tĩnh, **chưa đăng nhập, chưa lưu dữ liệu hay cấp máy thật**. `src/domain/queue/queue.ts` mới là hàm thuần đề xuất ghép người đang sẵn sàng với máy đủ điều kiện; ứng dụng thực tế phải lưu giao dịch nguyên tử ở máy chủ, không dùng hàm này một mình để cấp lượt.
+
+```powershell
+npm ci
+npm run dev
+```
+
+Mở `http://localhost:3000`. Kiểm tra trước PR bằng `npm run check` và `npm run build`. CI chạy cùng các bước này. Tài liệu nghiệp vụ vẫn có quyết định chưa chốt; xem [rà soát trước khi lập trình](docs/ra-soat-truoc-khi-lap-trinh.md) trước khi làm backend giao lượt/bàn giao.
