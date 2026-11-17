@@ -21,16 +21,18 @@ Dự án web ưu tiên giao diện điện thoại; mỗi quản lý chọn số
 
 ## Khởi chạy mã nguồn
 
-Đây là **bài tập lớn Java**: nghiệp vụ hướng đối tượng, phân quyền và API nằm trong `backend/` (**Java 21 + Spring Boot + Maven + H2**). Next.js/React/TypeScript ở `src/app` chỉ là khung giao diện tĩnh; **chưa kết nối API Java**. Backend có đăng ký tài khoản, tạo tòa với **số máy do từng quản lý chọn** (1–30 ở bản thử), thêm máy, đánh dấu bảo trì, lời mời 7 ngày, duyệt thành viên, vào/rời hàng và bật/tắt Sẵn sàng. Không có cấp máy tự động, đồng hồ 8 phút, theo dõi mẻ giặt, ETA, đổi lượt hoặc chat.
+Đây là **bài tập lớn Java**: nghiệp vụ hướng đối tượng, phân quyền và API nằm trong `backend/` (**Java 21 + Spring Boot + Maven + H2**). Next.js/React/TypeScript ở `src/` là giao diện web và cầu nối API phía server qua địa chỉ loopback (`JAVA_API_ORIGIN`, mặc định `http://127.0.0.1:8080`).
+
+Các luồng đã nối: đăng ký/đăng nhập/đăng xuất bằng session + CSRF, tạo và xem tòa, quản lý chọn số máy (1–30 ở bản thử), thêm máy, đánh dấu bảo trì, tạo/gửi lời mời 7 ngày, duyệt thành viên, vào/rời hàng và bật/tắt Sẵn sàng. **Chưa có cấp máy tự động, đồng hồ 8 phút, theo dõi mẻ giặt, ETA, đổi lượt hoặc chat.**
 
 ```powershell
-# API Java (http://localhost:8080)
+# Terminal 1: API Java (http://127.0.0.1:8080)
 mvn -f backend/pom.xml spring-boot:run
 # Kiểm thử Java
 mvn -f backend/pom.xml test
-# Giao diện tĩnh (http://localhost:3000), chạy ở terminal khác
+# Terminal 2: Giao diện Next.js (http://localhost:3000)
 npm ci
 npm run dev
 ```
 
-H2 lưu file trong `.data/` của thư mục **đang chạy lệnh** (chạy từ gốc repo thì là `<repo>/.data/`); dữ liệu này không được commit. Chi tiết API và giới hạn bản thử ở [backend/README.md](backend/README.md). API hiện dùng HTTP Basic và **giữ CSRF bảo vệ**: gọi `GET /api/csrf` để nhận token/session, gửi header được trả về và cookie cùng mỗi yêu cầu POST/PATCH/DELETE. Chỉ dùng cho thử nghiệm cục bộ, chưa triển khai Internet; frontend chưa có form kết nối API hay xử lý đăng nhập. Java CI và frontend CI chạy độc lập. Xem [rà soát trước khi lập trình](docs/ra-soat-truoc-khi-lap-trinh.md) trước khi làm backend giao lượt/bàn giao.
+H2 lưu file trong `.data/` của thư mục **đang chạy lệnh** (chạy từ gốc repo thì là `<repo>/.data/`); dữ liệu này không được commit. Chi tiết API và giới hạn bản thử ở [backend/README.md](backend/README.md). Backend Java dùng **phiên đăng nhập (HttpSession `JSESSIONID`) + Spring CSRF**; Next.js chỉ giữ cookie phiên opaque `HttpOnly` (`laundry_session`), không lưu mật khẩu hay Basic header trong cookie/trình duyệt và không chuyển nguyên header/lỗi/redirect từ Java ra trình duyệt. Bản hiện tại chỉ dùng cho thử nghiệm cục bộ, chưa triển khai Internet. Java CI và frontend CI chạy độc lập. Xem [rà soát trước khi lập trình](docs/ra-soat-truoc-khi-lap-trinh.md) trước khi làm backend giao lượt/bàn giao.

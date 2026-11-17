@@ -15,13 +15,15 @@ API chỉ lắng nghe trên `127.0.0.1:8080` trong cấu hình phát triển, t�
 
 ## API hiện có
 
-- `GET /api/csrf` — nhận CSRF token và cookie phiên; gửi lại cookie và header token cho các lệnh thay đổi dữ liệu.
+- `GET /api/csrf` — nhận CSRF token và cookie phiên; gửi lại cookie và header token cho các lệnh thay đổi dữ liệu (`POST`, `PATCH`, `DELETE`).
 - `POST /api/accounts` — đăng ký tài khoản (`username`, `displayName`, `password` tối thiểu 12 ký tự).
-- `GET /api/me`, `GET /api/buildings` — xác thực HTTP Basic.
+- `POST /api/auth/login` — đăng nhập bằng `username` + `password`, tạo phiên `JSESSIONID` (`HttpOnly`, `SameSite=Lax`) và xoay CSRF token.
+- `POST /api/auth/logout` — đăng xuất (yêu cầu CSRF), vô hiệu `HttpSession` và xóa cookie `JSESSIONID`, trả `204` không redirect.
+- `GET /api/me`, `GET /api/buildings` — xác thực bằng cookie phiên `JSESSIONID`.
 - `POST /api/buildings` — quản lý tạo tòa với `name` và `machineCount` từ 1–30; tạo đủ máy được đánh số trong một giao dịch.
 - `GET /api/buildings/{id}` — thành viên đã duyệt xem máy và thứ tự hàng.
 - `POST /api/buildings/{id}/machines`, `PATCH /api/buildings/{id}/machines/{machineId}` — chỉ quản lý thêm máy/đánh dấu bảo trì.
 - `POST /api/buildings/{id}/invitations` — chỉ quản lý tạo token mời dùng 7 ngày; `POST /api/invitations/{token}/join` — cư dân gửi yêu cầu; `GET /api/buildings/{id}/members/pending` và `POST /api/buildings/{id}/members/{accountId}/approve` — duyệt.
 - `POST /api/buildings/{id}/queue` (`ready`), `PATCH /api/buildings/{id}/queue/me` (`ready`), `DELETE /api/buildings/{id}/queue/me` — vào, đổi Sẵn sàng, rời hàng.
 
-**Chưa có cấp máy, giờ giặt, nhường lượt, đổi lượt hay chat**. Trạng thái máy `AVAILABLE` chỉ có nghĩa quản lý chưa đánh dấu bảo trì; không được dùng để tuyên bố lồng giặt thực tế trống. Next.js hiện là frontend tĩnh chưa kết nối Java API. Không triển khai công khai với HTTP Basic hoặc file H2 thử nghiệm; trước đó cần HTTPS, chiến lược đăng nhập phù hợp giao diện điện thoại, migrations, backup và kiểm thử bảo mật.
+**Chưa có cấp máy, giờ giặt, nhường lượt, đổi lượt hay chat**. Trạng thái máy `AVAILABLE` chỉ có nghĩa quản lý chưa đánh dấu bảo trì; không được dùng để tuyên bố lồng giặt thực tế trống. Không triển khai công khai với file H2 thử nghiệm hoặc HTTP thuần; trước đó cần HTTPS, migrations, backup và kiểm thử bảo mật.
