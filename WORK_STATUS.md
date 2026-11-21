@@ -2,6 +2,16 @@
 
 > Bắt đầu bằng file này và `git status --short --branch`. Chỉ mở các file liên quan tác vụ; không coi nội dung này là quyền phê duyệt merge/push.
 
+## Nút xác nhận máy trống phần A — 2026-11-22
+
+- PR #6 (test cạnh tranh) đã squash merge vào develop thành `0566db9`. Các ghi chú bên dưới là lịch sử.
+- Thêm `ConfirmMachineFreeButton.tsx` độc lập cho C ghép vào danh sách máy, chưa sửa `LaundryApp.tsx` hoặc backend. Dùng POST confirm-free hiện có.
+- Chỉ hiện cho quản lý; mở xác nhận rồi phải tích đã kiểm tra máy tại chỗ, đã dừng và trống đồ. Chỉ AVAILABLE/NEEDS_CHECK và xác minh không có hold mới cho gửi; RUNNING/MAINTENANCE/trạng thái mới/holds chưa tải khóa thao tác.
+- Chặn gửi lặp; 401 báo hết phiên, 403 khóa quyền, lỗi/kết quả chưa rõ yêu cầu refresh và dấu tích mới; thành công không gửi lại trên snapshot cũ. Abort/bỏ kết quả cũ khi đổi tòa/tài khoản/máy/trạng thái/hold.
+- Thành công yêu cầu cha refresh máy/queue/holds/trạng thái cá nhân, không tự hiển thị máy Trống vì có thể vừa cấp ngay. Không dùng nút để bỏ qua mẻ/bàn giao của B.
+- Thêm 18 test DOM và hướng dẫn `src/components/ConfirmMachineFreeButton.md`. Đã chạy `npm run check`: docs/lint/typecheck đạt, **86/86 test frontend đạt**; `npm run build` đạt. Không chạy lại Java vì không đổi Java/API.
+- Chưa ghép giao diện/chạy browser-Java end-to-end; chưa commit/push phần nút mới.
+
 ## Test cạnh tranh phần A — 2026-11-22
 
 - API trạng thái cá nhân đợt trước đã được merge qua PR #5 vào develop (`d29a3c8`). Các mục phía dưới là lịch sử, không phải trạng thái chưa push hiện tại của API.
