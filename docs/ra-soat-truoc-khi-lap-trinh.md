@@ -17,13 +17,13 @@ Tài liệu này phân biệt **đã thống nhất** từ đặc tả/trao đ�
 
 ## II. Quyết định ảnh hưởng nghiệp vụ/kiến trúc — phân biệt đã chốt với còn mở
 
-### 1. “Trả về vị trí cũ” khi những người khác đổi lượt trong lúc đang giữ máy — BẮT BUỘC
+### 1. “Trả về vị trí cũ” khi những người khác đổi lượt trong lúc đang giữ máy — ĐÃ CHỐT
 
 Mô tả hiện tại “sau tất cả người vốn ở trước, trước tất cả người vốn ở sau” **có thể bất khả thi**. Ví dụ ban đầu `A → B → C`, A chưa sẵn sàng nên B được giao máy; A và C đổi thành `C → A`. Khi B báo lỗi, không thể vừa đặt B sau A (vốn đứng trước B) vừa trước C (vốn đứng sau B), bởi C giờ đứng trước A.
 
-**Đề xuất mặc định (chưa duyệt):** mỗi yêu cầu giặt có một khóa thứ tự tồn tại cả trong lúc đang giữ máy; việc giao máy chỉ ẩn người khỏi danh sách **đang chờ**, không xóa khóa. Đổi lượt chỉ hoán đổi khóa của **hai người đang chờ**, không hoán đổi khóa người đang giữ. Khi báo lỗi hợp lệ, người giữ trở lại hàng tại khóa của họ. Trật tự **hiện tại của các khóa** quyết định, không cố tái lập quan hệ với từng người trong ảnh chụp quá khứ. Với khóa ban đầu A=1, B=2, C=3 rồi A/C đổi, kết quả xác định là `C(1) → B(2) → A(3)`. Điều này có nghĩa B không chen trước C đã đổi lên hợp lệ. Những người đã nhận máy không bị thu hồi.
+**Đã chốt theo xác nhận của người dùng:** mỗi yêu cầu giặt có một khóa thứ tự tồn tại cả trong lúc đang giữ máy; việc giao máy chỉ ẩn người khỏi danh sách **đang chờ**, không xóa khóa. Đổi lượt chỉ hoán đổi khóa của **hai người đang chờ**, không hoán đổi khóa người đang giữ. Khi báo lỗi hợp lệ, người giữ trở lại hàng tại khóa của họ. Trật tự **hiện tại của các khóa** quyết định, không cố tái lập quan hệ với từng người trong ảnh chụp quá khứ. Với khóa ban đầu A=1, B=2, C=3 rồi A/C đổi, kết quả xác định là `C(1) → B(2) → A(3)`. Điều này có nghĩa B không chen trước C đã đổi lên hợp lệ. Những người đã nhận máy không bị thu hồi.
 
-Cần xác nhận chấp nhận hệ quả này, vì cách nói trước đây “trước mọi người vốn đứng sau” sẽ không còn đúng nếu những người ấy đã đổi lượt trong lúc B giữ máy. Nếu không chấp nhận, phải cấm/giới hạn một số lần đổi lượt trong thời gian người khác đang giữ máy; trải nghiệm sẽ phức tạp hơn.
+Người dùng đã chấp nhận hệ quả này: sau khi người khác đổi lượt hợp lệ, không cố giữ quan hệ “trước mọi người vốn đứng sau” trong ảnh chụp cũ. Không thu hồi máy đã giao. Bản cấp máy ban đầu giữ khóa thứ tự khi đang giữ; tính năng đổi lượt sẽ dùng quy tắc này ở giai đoạn sau.
 
 **Test:** cùng lúc đổi lượt + cấp máy; hai lượt giữ báo lỗi theo thứ tự ngược; người giữ báo lỗi sau khi người mang khóa thấp hơn đã rời hàng; người đổi lượt đã nhận máy; báo lỗi hai lần không tạo hai hàng chờ.
 

@@ -15,11 +15,14 @@ public class LaundryService {
     private final MembershipRepository memberships;
     private final MachineRepository machines;
     private final QueueEntryRepository queue;
+    private final MachineHoldRepository holds;
+    private final AllocationService allocation;
 
     public LaundryService(AccountRepository accounts, BuildingRepository buildings, MembershipRepository memberships,
-                          MachineRepository machines, QueueEntryRepository queue) {
+                          MachineRepository machines, QueueEntryRepository queue, MachineHoldRepository holds,
+                          AllocationService allocation) {
         this.accounts = accounts; this.buildings = buildings; this.memberships = memberships;
-        this.machines = machines; this.queue = queue;
+        this.machines = machines; this.queue = queue; this.holds = holds; this.allocation = allocation;
     }
 
     @Transactional
@@ -42,15 +45,37 @@ public class LaundryService {
         String cleaned = label.trim();
         if (cleaned.isBlank() || cleaned.length() > 60 || machines.existsByBuilding_IdAndLabel(buildingId, cleaned))
             throw bad("Tên máy không hợp lệ hoặc đã tồn tại");
-        return machines.save(new Machine(building, cleaned, Math.toIntExact(machines.countByBuilding_Id(buildingId) + 1)));
+        Machine machine = machines.save(new Machine(building, cleaned, Math.toIntExact(machines.countByBuilding_Id(buildingId) + 1)));
+        allocation.dispatchLocked(buildingId);
+        return machine;
     }
 
     @Transactional
     public void setMaintenance(String username, UUID buildingId, UUID machineId, boolean maintenance) {
+        locked(buildingId);
         requireMember(username, buildingId, true);
         Machine machine = machines.findByIdAndBuilding_Id(machineId, buildingId)
             .orElseThrow(() -> missing("Không tìm thấy máy trong tòa"));
+        if (machine.getStatus() == Machine.Status.RUNNING)
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Máy đang chạy; cần hoàn tất hoặc xử lý mẻ giặt trước");
+        if (!holds.findByMachine_IdAndStatus(machineId, MachineHold.Status.ACTIVE).isEmpty())
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Máy đang giữ lượt; cần xử lý lượt trước khi bảo trì");
         machine.setMaintenance(maintenance);
+        if (!maintenance) allocation.dispatchLocked(buildingId);
+    }
+
+    @Transactional
+    public void confirmMachineFree(String username, UUID buildingId, UUID machineId) {
+        locked(buildingId);
+        requireMember(username, buildingId, true);
+        Machine machine = machines.findByIdAndBuilding_Id(machineId, buildingId)
+            .orElseThrow(() -> missing("Không tìm thấy máy trong tòa"));
+        if (!holds.findByMachine_IdAndStatus(machineId, MachineHold.Status.ACTIVE).isEmpty())
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Máy đang được giữ lượt");
+        if (machine.getStatus() == Machine.Status.RUNNING || machine.getStatus() == Machine.Status.MAINTENANCE)
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Máy đang chạy hoặc bảo trì; không thể xác nhận trống");
+        machine.confirmFree();
+        allocation.dispatchLocked(buildingId);
     }
 
     @Transactional
@@ -59,23 +84,26 @@ public class LaundryService {
         Account user = requireMember(username, buildingId, false);
         if (queue.existsByBuilding_IdAndAccount_IdAndActiveTrue(buildingId, user.getId())) throw bad("Bạn đã ở trong hàng");
         // Historical rows retain positions. A new visit always joins at the end.
-        return queue.save(new QueueEntry(building, user, queue.maxPositionByBuildingId(buildingId) + 1, ready));
+        QueueEntry entry = queue.save(new QueueEntry(building, user, queue.maxPositionByBuildingId(buildingId) + 1, ready));
+        if (ready) allocation.dispatchLocked(buildingId);
+        return entry;
     }
 
     @Transactional
     public void setReady(String username, UUID buildingId, boolean ready) {
         locked(buildingId);
         Account user = requireMember(username, buildingId, false);
-        QueueEntry entry = queue.findByBuilding_IdAndAccount_IdAndActiveTrue(buildingId, user.getId())
+        QueueEntry entry = queue.findByBuilding_IdAndAccount_IdAndState(buildingId, user.getId(), QueueEntry.State.WAITING)
             .orElseThrow(() -> bad("Bạn chưa ở trong hàng"));
         entry.setReady(ready);
+        if (ready) allocation.dispatchLocked(buildingId);
     }
 
     @Transactional
     public void leave(String username, UUID buildingId) {
         locked(buildingId);
         Account user = requireMember(username, buildingId, false);
-        QueueEntry entry = queue.findByBuilding_IdAndAccount_IdAndActiveTrue(buildingId, user.getId())
+        QueueEntry entry = queue.findByBuilding_IdAndAccount_IdAndState(buildingId, user.getId(), QueueEntry.State.WAITING)
             .orElseThrow(() -> bad("Bạn chưa ở trong hàng"));
         entry.leave();
     }
@@ -87,7 +115,7 @@ public class LaundryService {
         return new BuildingView(building.getId(), building.getName(),
             machines.findByBuilding_IdOrderByDisplayOrderAsc(buildingId).stream()
                 .map(m -> new MachineView(m.getId(), m.getLabel(), m.getStatus())).toList(),
-            queue.findByBuilding_IdAndActiveTrueOrderByPositionAsc(buildingId).stream()
+            queue.findByBuilding_IdAndStateOrderByPositionAsc(buildingId, QueueEntry.State.WAITING).stream()
                 .map(e -> new QueueView(e.getId(), e.getAccountId(), e.getDisplayName(), e.getPosition(), e.isReady())).toList());
     }
 
