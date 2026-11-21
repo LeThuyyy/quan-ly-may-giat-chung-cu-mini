@@ -1,25 +1,38 @@
 # Bàn giao công việc
 
-> Điểm bắt đầu cho các lượt điều phối: đọc file này, `git status --short --branch` và trạng thái PR; chỉ mở mã nguồn khi nhiệm vụ yêu cầu. Ghi sự thật vừa kiểm chứng, không coi file này là quyền phê duyệt.
+> Bắt đầu bằng file này và `git status --short --branch`. Chỉ mở các file liên quan tác vụ; không coi nội dung này là quyền phê duyệt merge/push.
 
-## Trạng thái tại lần cập nhật này (2026-11-18)
+## Cập nhật phần A — 2026-11-21
 
-- Nhánh: `feature/next-java-integration` (chưa commit, chưa push/merge).
-- **Đã làm**:
-  - Bảo mật đăng nhập Java: chuyển từ HTTP Basic sang session `JSESSIONID` (`POST /api/auth/login`, `POST /api/auth/logout` trả `204` không redirect, `AuthenticationEntryPoint` trả `401` không `WWW-Authenticate`), giữ Spring CSRF và xoay CSRF token khi đăng nhập.
-  - Cầu nối Next.js phía server (`src/lib/session-store.ts`, `src/lib/java-bridge.ts`, `src/lib/route-helpers.ts`, `src/app/api/**`): chỉ giữ cookie phiên opaque `HttpOnly` (`laundry_session`), gọi Java qua loopback cố định (`JAVA_API_ORIGIN`, mặc định `http://127.0.0.1:8080`), chặn chuyển hướng 3xx, không chuyển nguyên header/lỗi/redirect ra trình duyệt, kiểm tra `Origin` trên request thay đổi dữ liệu.
-  - Giao diện Next.js (`src/components/LaundryApp.tsx`, `src/app/page.tsx`, `src/app/globals.css`): nối đăng ký/đăng nhập/đăng xuất, tạo & xem tòa (quản lý chọn 1–30 máy), thêm máy, bật/tắt bảo trì, tạo/gửi lời mời 7 ngày, duyệt cư dân, vào/rời hàng và bật/tắt Sẵn sàng. Cập nhật `README.md` và `backend/README.md`.
-- **Kiểm tra đã đạt**:
-  - `mvn -f backend/pom.xml test`: **12/12 test đạt** (gồm `RealHttpAuthAndSecurityTest` chạy HTTP thật qua `RANDOM_PORT`: xác nhận cookie `JSESSIONID` đăng nhập được ở request kế tiếp, CSRF chặn token sai/thiếu bằng 403, đăng xuất vô hiệu phiên bằng 401, và phân quyền tòa).
-  - `npm run check`: `check:docs`, `eslint`, `typecheck`, `vitest` (**5/5 test**, gồm thiếu Origin/Host, Origin khác nguồn và đúng nguồn) đạt.
-  - `npm run build` & `git diff --check`: đạt sau sửa Origin. Next.js từ chối yêu cầu thay đổi dữ liệu khi thiếu Origin/Host hoặc không khớp scheme, host và origin của request.
-  - Đã chạy cả Next.js và Java trên localhost, thử đăng ký → đăng nhập → tạo tòa 3 máy → vào hàng → bật Sẵn sàng → đăng xuất; Origin khác nguồn trả 403. Hai server thử nghiệm đã dừng. Chưa chạy kiểm thử thao tác bằng trình duyệt.
-  - Lỗi ảnh “Đang tải dữ liệu tòa…” đã tái hiện: tiến trình Next.js cũ trả HTTP 500/Jest worker cho GET chi tiết và danh sách chờ duyệt; sau khi khởi động Next.js mới, cả hai trả HTTP 200 với tòa thử mới. Sửa `LaundryApp.tsx` để thất bại hiện lỗi + nút “Thử tải lại”, không treo loading, tránh hiển thị dữ liệu tòa cũ khi đổi lựa chọn. Người dùng đã mở giao diện và xác nhận **ổn**. Chạy lại `mvn -f backend/pom.xml test` (12/12), `npm run check` (5/5), `npm run build`, `git diff --check`: tất cả đạt sau lần xác nhận này.
-- **Chưa làm / giới hạn**:
-  - Chưa triển khai giao máy tự động, đồng hồ 8 phút, ETA, đổi lượt, chat.
-  - Phiên opaque Next.js lưu trong bộ nhớ tiến trình Node (mất khi khởi động lại server Next.js); chưa test E2E trình duyệt chạy đồng thời cả hai tiến trình Next.js + Spring Boot.
+- Tiếp tục phần độc lập của A, chưa commit/push và chưa đổi nhánh.
+- Job hết hạn chuyển sang truy vấn trực tiếp ID tòa bằng JPQL, tránh truy cập quan hệ lazy của entity khi không có persistence context.
+- `LaundryService` từ chối cả bật/tắt bảo trì khi máy đang chạy hoặc có lượt giữ; xác nhận máy trống khi đang chạy/bảo trì trả 409 thay vì lỗi nội bộ. Không thay đổi luồng mẻ giặt/bàn giao của B.
+- Bổ sung test service: mốc trước/đúng hạn, job chạy trễ/lặp, không ai sẵn sàng, cấp đồng thời một/hai máy, nhường lặp, bắt đầu so với hết hạn, bảo trì không làm mất trạng thái đang chạy/giữ lượt. Test dùng Clock điều khiển và vô hiệu job nền trong context test đó.
+- Thêm `AllocationApiTest` cho xác thực, CSRF, chủ lượt, thành viên đã duyệt và đường dẫn khác tòa. Ngày 2026-11-21 đã cài Microsoft OpenJDK 21 và tải Maven 3.9.11 từ Maven Central (kiểm tra SHA-512), được người dùng cho phép chạy. Chạy cả `test` và `clean test`: **28/28 test Java đạt, 0 lỗi, 0 thất bại, 0 bỏ qua; BUILD SUCCESS**. Không cần sửa thêm mã sau khi chạy. Có cảnh báo Mockito/Byte Buddy về dynamic agent trên JDK, không làm test thất bại.
+- Next.js có thêm 4 route: GET `/api/buildings/{id}/holds`; POST `/api/buildings/{id}/holds/{holdId}/yield`; POST `.../confirm-check`; POST `/api/buildings/{id}/machines/{machineId}/confirm-free`. Mutation kiểm tra Origin/Host, UUID và dùng bridge/session hiện có.
+- Thêm test route và `vitest.config.mjs` để giải alias `@/`. Đã chạy `npm run check`: docs/lint/typecheck đạt, **29/29 test frontend đạt**; `npm run build` đạt; `git diff --check` không báo lỗi khoảng trắng (có cảnh báo chuyển LF/CRLF).
+- Hoàn thành component độc lập `src/components/MachineHoldCard.tsx`: hiển thị máy/hạn giữ, xác nhận kiểm tra, nhường, chống bấm lặp, bỏ response cũ khi chuyển tòa, khóa thao tác khi hết phiên/mất mạng hoặc tới hạn. Không gọi `/start` hay mở rộng `/unusable`.
+- Thêm 13 test DOM cho card bằng React Testing Library/jsdom; tổng frontend hiện **42/42 test đạt**. Đã chạy lại check/build. Hướng dẫn props/refresh cho C ở `src/components/MachineHoldCard.md`. Chưa ghép vào `LaundryApp.tsx`, chưa kiểm thử end-to-end trình duyệt–Java; không coi tính năng đã xuất hiện trên trang chính.
+
+### Việc tiếp theo của A
+
+1. Kiểm thử Java đã xác minh qua `clean test`. Maven hiện được dùng qua đường dẫn tuyệt đối ở `%LOCALAPPDATA%/laundry-java-tools-0917c41981b34e3e98b4a65667dcf94c/extracted/apache-maven-3.9.11/bin/mvn.cmd`; chưa thêm Maven vào PATH. Java ở `C:/Program Files/Microsoft/jdk-21.0.13.102-hotspot`; đặt JAVA_HOME tương ứng khi chạy nếu shell chưa nhận cấu hình mới.
+2. Chốt hợp đồng start/unusable với B; không tạo API bắt đầu thứ hai và giữ giao dịch/khóa theo tòa.
+3. Card lượt giữ đã có; bàn giao props/refresh theo `src/components/MachineHoldCard.md` để C ghép khung và polling chung. Component hàng đợi riêng chưa làm; không tự sửa lớn `LaundryApp.tsx`.
+4. Chỉ chuẩn bị commit/PR khi kiểm thử Java đã xác minh; không thêm tệp tạm Word `docs/~$an-cong-va-deadline.md` vào commit.
+
+## Trạng thái 2026-11-18
+
+- `develop` trên GitHub đã nhận PR #2 (giao diện Next.js nối Java). Nhánh làm việc hiện tại: `feature/automatic-machine-assignment`, tạo từ `origin/develop`; **chưa commit/push/PR**.
+- Người dùng đã chốt quy tắc: lượt được giao giữ khóa thứ tự trong lúc giữ máy; nếu báo máy không dùng được trong hạn thì trở lại hàng ở khóa ấy, áp dụng thứ tự hiện tại sau các lần đổi lượt hợp lệ, không lấy máy đã cấp cho ai khác.
+- Đang triển khai Java backend: `MachineHold`, `AllocationService`, `AllocationController`, job hết hạn 8 phút, trạng thái hàng WAITING/HELD/WASHING/LEFT; chỉ giao khi quản lý **xác nhận máy trống**, không suy từ `AVAILABLE`/giờ xong dự kiến. Người chưa sẵn sàng bị bỏ qua, nhường hoặc hết hạn mất lượt, báo máy không dùng được trả mốc vị trí và chặn máy lỗi. Start yêu cầu xác nhận đã kiểm tra thực tế. Mọi quyết định tòa được khóa DB.
+- Có migration đơn giản cho hàng đợi cũ: backfill `state` từ `active`. Máy cũ không tự xác nhận trống (`verifiedFree` null được coi là false).
+- Đã có 3 test Java mới cho giao máy nhiều máy/chưa sẵn sàng, nhường và khôi phục vị trí, bắt đầu phải xác nhận kiểm tra; các test Java cũ vẫn chạy. Lần chạy gần nhất: **15/15 test Java đạt**, `npm run check` và `npm run build` đạt; `git diff --check` đạt ở thời điểm trước khi cập nhật file này.
+- **Chưa hoàn tất:** test thời hạn 8 phút với đồng hồ điều khiển; test cấp đồng thời và job hết hạn; luồng bắt đầu giặt chưa nhập số phút, chưa có bàn giao mẻ cũ. Frontend Next.js chưa nối API cấp máy/giữ lượt. Vì thế **chưa dùng tính năng này để vận hành thực tế**.
+- `next-env.d.ts` có thay đổi tự sinh khi chạy Next dev/build; không chỉnh tay hoặc xóa thay đổi mà không kiểm tra. Không commit/push/merge cho đến khi phần chức năng và test hoàn tất.
 
 ## Bước tiếp theo
 
-1. Commit/push nhánh `feature/next-java-integration`, tạo PR vào `develop` và chờ CI; người dùng kiểm tra cuối trước khi merge.
-2. Không push thẳng hoặc merge `main`. Sau khi `develop` được duyệt/gộp, tạo PR riêng vào `main` nếu người dùng yêu cầu.
+1. Hoàn thiện test thời hạn và cấp đồng thời, đảm bảo không cấp trùng máy hoặc một người hai máy; xử lý bắt đầu/hết hạn/báo lỗi đua nhau.
+2. Thiết kế luồng nhập phút giặt và bàn giao trước khi đưa cấp máy theo **giờ dự kiến** vào sử dụng; hiện chỉ xét máy đã được quản lý xác nhận trống.
+3. Nối UI vào API Java sau khi backend ổn; chạy toàn bộ test/build, cập nhật trạng thái, rồi mới đề xuất commit/PR. Người dùng kiểm tra cuối trước merge.
