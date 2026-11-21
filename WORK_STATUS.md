@@ -2,6 +2,16 @@
 
 > Bắt đầu bằng file này và `git status --short --branch`. Chỉ mở các file liên quan tác vụ; không coi nội dung này là quyền phê duyệt merge/push.
 
+## API trạng thái cá nhân phần A — 2026-11-21
+
+- PR #4 đã squash merge vào develop thành `9bbad59`. Đã fetch và xác nhận nội dung mã nền local bằng develop; chưa thay đổi lịch sử nhánh để làm API này.
+- Thêm GET `/api/buildings/{buildingId}/queue/me` bằng `QueueStatusController`/`QueueStatusService`, trả NONE/WAITING/HELD/WASHING, queueEntryId, ready, holdId, machineId, expiresAt và serverNow. Chỉ đọc tài khoản Authentication, chỉ thành viên APPROVED; no-store ở Java và Next.js.
+- Service dùng khóa theo tòa trong giao dịch ngắn để đọc entry/hold nhất quán; không sửa dữ liệu hoặc dispatch qua GET. Lượt HELD đã tới hạn nhưng job chưa xử lý vẫn trả HELD + deadline, không trả NONE giả; dữ liệu lỗi trả 409.
+- Thêm GET vào route Next.js queue/me, không đổi PATCH/DELETE. Không đổi start/unusable/mẻ giặt/bàn giao của B hoặc khung UI của C.
+- Thêm 8 test Java và 10 test route. Đã chạy toàn bộ Java: **36/36 đạt, 0 lỗi/thất bại/bỏ qua**; `npm run check`: docs/lint/typecheck đạt, **68/68 frontend test đạt**; `npm run build` đạt.
+- Hợp đồng chi tiết trong `docs/api-trang-thai-ca-nhan.md`; cập nhật backend README và hướng dẫn QueuePanel. C có thể dùng state cho participation, lỗi/đang tải vẫn UNKNOWN. Các GET riêng không bảo đảm snapshot nguyên tử toàn tòa; khi mâu thuẫn phải tải lại.
+- Chưa ghép UI hoặc chạy trình duyệt–Java end-to-end; chưa commit/push API mới.
+
 ## Component hàng đợi phần A — 2026-11-21
 
 - Phần trước đã commit `998ed75`, push nhánh `feature/automatic-machine-assignment` và squash merge PR #3 vào `develop` thành `6d7d316`; không thay đổi main. Các dòng bên dưới là lịch sử của đợt trước.
