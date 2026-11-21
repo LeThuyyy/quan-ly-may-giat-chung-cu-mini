@@ -12,7 +12,7 @@
 
 ## Cảnh báo quan trọng về participation
 
-Backend hiện có danh sách hàng chờ và danh sách holds nhưng chưa có endpoint trả đầy đủ trạng thái yêu cầu/mẻ cá nhân. Vì vậy **không được coi không có tên trong queue và không có hold là NONE**: có thể người đó đang WASHING. Khi không xác minh đủ, truyền UNKNOWN và giữ khóa thao tác; cần thống nhất API trạng thái cá nhân với B trước khi ghép hoàn chỉnh.
+Dùng **GET `/api/buildings/{id}/queue/me`** để lấy `state` từ server: NONE/WAITING/HELD/WASHING. Xem [hợp đồng API](../../docs/api-trang-thai-ca-nhan.md). **Không được coi không có tên trong queue và không có hold là NONE**: có thể người đó đang WASHING. Khi tải thất bại hoặc chưa có snapshot hợp lệ, truyền UNKNOWN. API phản ánh trạng thái hàng/giữ hiện tại, chưa phải toàn bộ dữ liệu mẻ giặt/bàn giao của B; khi B thêm trạng thái vòng đời mới cần cập nhật hợp đồng và panel cùng nhau.
 
 - WAITING chỉ hợp lệ nếu có entry của tài khoản trong danh sách.
 - HELD: dùng `MachineHoldCard`, không có nút rời hàng/tắt Sẵn sàng ở panel.
