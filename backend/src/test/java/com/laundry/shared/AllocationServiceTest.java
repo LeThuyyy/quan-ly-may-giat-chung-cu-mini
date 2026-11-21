@@ -2,6 +2,9 @@ package com.laundry.shared;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.RepeatedTest;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.http.HttpStatus;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
@@ -34,6 +37,8 @@ class AllocationServiceTest {
     @Autowired MembershipRepository memberships;
     @Autowired AdjustableClock clock;
     @Autowired MachineHoldRepository holds;
+    @Autowired QueueEntryRepository queue;
+    @Autowired QueueStatusService statuses;
     // Invoke a fresh job explicitly in tests; a background scheduler must not race the test clock.
     @MockitoBean HoldExpiryJob scheduledJob;
 
@@ -305,14 +310,216 @@ class AllocationServiceTest {
         assertEquals(a.getId(), laundry.view(owner.getUsername(), building.getId()).queue().getFirst().accountId());
     }
 
+    @RepeatedTest(3)
+    void sameAccountJoiningConcurrentlyCreatesOnlyOneActiveRequest() throws Exception {
+        Account owner = account("owner");
+        Building building = laundry.createBuilding(owner.getUsername(), "Tòa gửi trùng", 1);
+        UUID machineId = laundry.view(owner.getUsername(), building.getId()).machines().getFirst().id();
+        laundry.confirmMachineFree(owner.getUsername(), building.getId(), machineId);
+        AtomicInteger successes = new AtomicInteger();
+        AtomicInteger rejected = new AtomicInteger();
+        Runnable join = () -> {
+            try {
+                laundry.join(owner.getUsername(), building.getId(), true);
+                successes.incrementAndGet();
+            } catch (ResponseStatusException error) {
+                assertEquals(HttpStatus.BAD_REQUEST, error.getStatusCode());
+                rejected.incrementAndGet();
+            }
+        };
+        simultaneously(join, join);
+        assertEquals(1, successes.get());
+        assertEquals(1, rejected.get());
+        var entries = queue.findByBuilding_IdAndAccount_IdAndActiveTrue(building.getId(), owner.getId());
+        assertEquals(1, entries.size());
+        assertEquals(QueueEntry.State.HELD, entries.getFirst().getState());
+        var active = allocation.activeHolds(owner.getUsername(), building.getId());
+        assertEquals(1, active.size());
+        assertEquals(entries.getFirst().getId(), active.getFirst().queueEntryId());
+        assertEquals(machineId, active.getFirst().machineId());
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = { false, true })
+    void readinessAndDispatchAlwaysProduceOneConsistentOutcome(boolean initiallyReady) throws Exception {
+        // Exercise several independent races, but do not require a particular scheduling winner.
+        for (int attempt = 0; attempt < 3; attempt++) {
+            Account owner = account("owner");
+            Building building = laundry.createBuilding(owner.getUsername(), "Tòa đổi sẵn sàng", 1);
+            var entry = laundry.join(owner.getUsername(), building.getId(), initiallyReady);
+            UUID machineId = laundry.view(owner.getUsername(), building.getId()).machines().getFirst().id();
+            AtomicInteger readyChanges = new AtomicInteger();
+            simultaneously(
+                () -> {
+                    try {
+                        laundry.setReady(owner.getUsername(), building.getId(), !initiallyReady);
+                        readyChanges.incrementAndGet();
+                    } catch (ResponseStatusException error) {
+                        assertTrue(initiallyReady, "Bật Sẵn sàng từ WAITING phải thành công");
+                        assertEquals(HttpStatus.BAD_REQUEST, error.getStatusCode());
+                    }
+                },
+                () -> laundry.confirmMachineFree(owner.getUsername(), building.getId(), machineId));
+            var snapshot = statuses.current(owner.getUsername(), building.getId());
+            var persisted = queue.findById(entry.getId()).orElseThrow();
+            var active = allocation.activeHolds(owner.getUsername(), building.getId());
+            if (!initiallyReady || readyChanges.get() == 0) {
+                assertEquals(QueueStatusService.State.HELD, snapshot.state());
+                assertEquals(QueueEntry.State.HELD, persisted.getState());
+                assertTrue(persisted.isReady());
+                assertEquals(1, active.size());
+                assertEquals(entry.getId(), active.getFirst().queueEntryId());
+                assertTrue(laundry.view(owner.getUsername(), building.getId()).queue().isEmpty());
+            } else {
+                assertEquals(QueueStatusService.State.WAITING, snapshot.state());
+                assertEquals(QueueEntry.State.WAITING, persisted.getState());
+                assertFalse(persisted.isReady());
+                assertTrue(active.isEmpty());
+                assertEquals(entry.getId(), laundry.view(owner.getUsername(), building.getId()).queue().getFirst().id());
+            }
+            assertEquals(1, queue.findByBuilding_IdAndAccount_IdAndActiveTrue(building.getId(), owner.getId()).size());
+        }
+    }
+
+    @RepeatedTest(3)
+    void startAndYieldOfSameHoldHaveExactlyOneWinner() throws Exception {
+        var fixture = heldFixture();
+        allocation.confirmPhysicalCheck(fixture.first().getUsername(), fixture.buildingId(), fixture.hold().id());
+        AtomicInteger started = new AtomicInteger();
+        AtomicInteger yielded = new AtomicInteger();
+        AtomicInteger conflicts = new AtomicInteger();
+        simultaneously(
+            () -> expectSuccessOrConflict(() -> allocation.start(fixture.first().getUsername(), fixture.buildingId(), fixture.hold().id()), started, conflicts),
+            () -> expectSuccessOrConflict(() -> allocation.yield(fixture.first().getUsername(), fixture.buildingId(), fixture.hold().id()), yielded, conflicts));
+        assertEquals(1, started.get() + yielded.get());
+        assertEquals(1, conflicts.get());
+        var original = holds.findById(fixture.hold().id()).orElseThrow();
+        var active = allocation.activeHolds(fixture.owner().getUsername(), fixture.buildingId());
+        var machine = laundry.view(fixture.owner().getUsername(), fixture.buildingId()).machines().getFirst();
+        if (started.get() == 1) {
+            assertEquals(MachineHold.Status.STARTED, original.getStatus());
+            assertEquals(Machine.Status.RUNNING, machine.status());
+            assertEquals(QueueStatusService.State.WASHING, statuses.current(fixture.first().getUsername(), fixture.buildingId()).state());
+            assertEquals(QueueStatusService.State.WAITING, statuses.current(fixture.next().getUsername(), fixture.buildingId()).state());
+            assertTrue(active.isEmpty());
+        } else {
+            assertEquals(MachineHold.Status.YIELDED, original.getStatus());
+            assertEquals(Machine.Status.AVAILABLE, machine.status());
+            assertEquals(QueueStatusService.State.NONE, statuses.current(fixture.first().getUsername(), fixture.buildingId()).state());
+            assertEquals(1, active.size());
+            assertEquals(fixture.next().getId(), active.getFirst().accountId());
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = { false, true })
+    void unusableAndExpiryDoNotResurrectExpiredRequests(boolean atDeadline) throws Exception {
+        var fixture = heldFixture();
+        clock.set(atDeadline ? fixture.hold().expiresAt() : fixture.hold().expiresAt().minusNanos(1));
+        simultaneously(
+            () -> {
+                if (atDeadline) {
+                    var error = assertThrows(ResponseStatusException.class,
+                        () -> allocation.reportUnusable(fixture.first().getUsername(), fixture.buildingId(), fixture.hold().id()));
+                    assertEquals(HttpStatus.CONFLICT, error.getStatusCode());
+                } else {
+                    allocation.reportUnusable(fixture.first().getUsername(), fixture.buildingId(), fixture.hold().id());
+                }
+            },
+            () -> allocation.expire(fixture.buildingId()));
+        var original = holds.findById(fixture.hold().id()).orElseThrow();
+        var current = statuses.current(fixture.first().getUsername(), fixture.buildingId());
+        var active = allocation.activeHolds(fixture.owner().getUsername(), fixture.buildingId());
+        if (atDeadline) {
+            assertEquals(MachineHold.Status.EXPIRED, original.getStatus());
+            assertEquals(QueueStatusService.State.NONE, current.state());
+            assertEquals(1, active.size());
+            assertEquals(fixture.next().getId(), active.getFirst().accountId());
+        } else {
+            assertEquals(MachineHold.Status.UNUSABLE, original.getStatus());
+            assertEquals(QueueStatusService.State.WAITING, current.state());
+            assertEquals(fixture.hold().queueEntryId(), current.queueEntryId());
+            assertEquals(List.of(fixture.first().getId(), fixture.next().getId()),
+                laundry.view(fixture.owner().getUsername(), fixture.buildingId()).queue().stream()
+                    .map(LaundryService.QueueView::accountId).toList());
+            assertTrue(active.isEmpty());
+            assertEquals(Machine.Status.NEEDS_CHECK,
+                laundry.view(fixture.owner().getUsername(), fixture.buildingId()).machines().getFirst().status());
+            var repeat = assertThrows(ResponseStatusException.class,
+                () -> allocation.reportUnusable(fixture.first().getUsername(), fixture.buildingId(), fixture.hold().id()));
+            assertEquals(HttpStatus.CONFLICT, repeat.getStatusCode());
+            assertEquals(1, queue.findByBuilding_IdAndAccount_IdAndActiveTrue(fixture.buildingId(), fixture.first().getId()).size());
+        }
+    }
+
+    @Test void overlappingExpiryJobsProcessMultipleBuildingsWithoutTouchingUnexpiredHold() throws Exception {
+        var first = heldFixture();
+        var second = heldFixture();
+        // Second building has no ready successor; it must not receive a new hold.
+        laundry.setReady(second.next().getUsername(), second.buildingId(), false);
+        clock.set(clock.instant().plusSeconds(120));
+        var unexpired = heldFixture();
+        clock.set(first.hold().expiresAt());
+        var job = new HoldExpiryJob(holds, allocation, clock);
+        simultaneously(job::expireHolds, job::expireHolds);
+        assertEquals(MachineHold.Status.EXPIRED, holds.findById(first.hold().id()).orElseThrow().getStatus());
+        assertEquals(MachineHold.Status.EXPIRED, holds.findById(second.hold().id()).orElseThrow().getStatus());
+        var replacement = allocation.activeHolds(first.owner().getUsername(), first.buildingId());
+        assertEquals(1, replacement.size());
+        assertEquals(first.next().getId(), replacement.getFirst().accountId());
+        assertEquals(clock.instant().plusSeconds(480), replacement.getFirst().expiresAt());
+        assertTrue(allocation.activeHolds(second.owner().getUsername(), second.buildingId()).isEmpty());
+        assertEquals(QueueStatusService.State.WAITING, statuses.current(second.next().getUsername(), second.buildingId()).state());
+        assertEquals(false, statuses.current(second.next().getUsername(), second.buildingId()).ready());
+        var untouched = allocation.activeHolds(unexpired.owner().getUsername(), unexpired.buildingId());
+        assertEquals(1, untouched.size());
+        assertEquals(unexpired.hold().id(), untouched.getFirst().id());
+        assertEquals(unexpired.hold().expiresAt(), untouched.getFirst().expiresAt());
+        job.expireHolds();
+        assertEquals(replacement.getFirst().id(), allocation.activeHolds(first.owner().getUsername(), first.buildingId()).getFirst().id());
+    }
+
+    private record HeldFixture(Account owner, UUID buildingId, Account first, Account next,
+                               AllocationService.HoldView hold) {}
+
+    private HeldFixture heldFixture() {
+        Account owner = account("owner");
+        Building building = laundry.createBuilding(owner.getUsername(), "Tòa kiểm thử cạnh tranh", 1);
+        Account first = resident(building, "first");
+        Account next = resident(building, "next");
+        laundry.join(first.getUsername(), building.getId(), true);
+        laundry.join(next.getUsername(), building.getId(), true);
+        UUID machineId = laundry.view(owner.getUsername(), building.getId()).machines().getFirst().id();
+        laundry.confirmMachineFree(owner.getUsername(), building.getId(), machineId);
+        return new HeldFixture(owner, building.getId(), first, next,
+            allocation.activeHolds(owner.getUsername(), building.getId()).getFirst());
+    }
+
+    private void expectSuccessOrConflict(Runnable action, AtomicInteger successes, AtomicInteger conflicts) {
+        try {
+            action.run();
+            successes.incrementAndGet();
+        } catch (ResponseStatusException error) {
+            assertEquals(HttpStatus.CONFLICT, error.getStatusCode());
+            conflicts.incrementAndGet();
+        }
+    }
+
     private void simultaneously(Runnable first, Runnable second) throws Exception {
+        CountDownLatch ready = new CountDownLatch(2);
         CountDownLatch start = new CountDownLatch(1);
-        try (var workers = Executors.newFixedThreadPool(2)) {
-            var left = workers.submit(() -> { start.await(); first.run(); return null; });
-            var right = workers.submit(() -> { start.await(); second.run(); return null; });
+        var workers = Executors.newFixedThreadPool(2);
+        try {
+            var left = workers.submit(() -> { ready.countDown(); start.await(); first.run(); return null; });
+            var right = workers.submit(() -> { ready.countDown(); start.await(); second.run(); return null; });
+            assertTrue(ready.await(5, TimeUnit.SECONDS), "Hai worker phải sẵn sàng trước khi bắt đầu");
             start.countDown();
             left.get(10, TimeUnit.SECONDS);
             right.get(10, TimeUnit.SECONDS);
+        } finally {
+            start.countDown();
+            workers.shutdownNow();
+            assertTrue(workers.awaitTermination(5, TimeUnit.SECONDS), "Worker không kết thúc sau timeout");
         }
     }
 
