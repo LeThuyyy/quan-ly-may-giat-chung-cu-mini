@@ -2,6 +2,16 @@
 
 > Bắt đầu bằng file này và `git status --short --branch`. Chỉ mở các file liên quan tác vụ; không coi nội dung này là quyền phê duyệt merge/push.
 
+## Test cạnh tranh phần A — 2026-11-22
+
+- API trạng thái cá nhân đợt trước đã được merge qua PR #5 vào develop (`d29a3c8`). Các mục phía dưới là lịch sử, không phải trạng thái chưa push hiện tại của API.
+- Chỉ thay đổi `AllocationServiceTest.java` và ghi chú này; không đổi production Java, API/payload start-unusable, UI hoặc nghiệp vụ mẻ/bàn giao của B.
+- Bổ sung 5 nhóm tình huống với tổng 11 lượt test mới: cùng tài khoản join hai lần; bật/tắt Sẵn sàng đua cấp máy; start đua yield; unusable đua expire ở trước/đúng hạn; hai job hết hạn đồng thời xử lý nhiều tòa và giữ nguyên tòa có lượt chưa hết hạn.
+- Kiểm tra cả trạng thái persisted của request/hold, số lượt hợp lệ, người kế tiếp và trạng thái máy. Không bắt buộc một worker phải thắng; lỗi ngoài mã nghiệp vụ dự kiến sẽ làm test thất bại. Một số tình huống được lặp 3 lần, không coi đây là chứng minh mọi lịch xen kẽ đều an toàn.
+- Helper đồng thời chờ đủ hai worker sẵn sàng rồi mới mở latch; có timeout và shutdown để tránh treo suite. Clock điều khiển, không sleep chờ 8 phút.
+- Đã chạy riêng AllocationServiceTest: **23/23 đạt**. Đã chạy toàn bộ bằng `mvn -B -f backend/pom.xml clean test`: **47/47 test Java đạt, 0 lỗi/thất bại/bỏ qua; BUILD SUCCESS**. Chưa phát hiện lỗi cần sửa mã nghiệp vụ trong các lần chạy này.
+- Không chạy lại frontend vì không thay đổi frontend. Chưa commit/push đợt test mới.
+
 ## API trạng thái cá nhân phần A — 2026-11-21
 
 - PR #4 đã squash merge vào develop thành `9bbad59`. Đã fetch và xác nhận nội dung mã nền local bằng develop; chưa thay đổi lịch sử nhánh để làm API này.
