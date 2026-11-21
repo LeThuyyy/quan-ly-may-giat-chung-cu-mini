@@ -2,6 +2,16 @@
 
 > Bắt đầu bằng file này và `git status --short --branch`. Chỉ mở các file liên quan tác vụ; không coi nội dung này là quyền phê duyệt merge/push.
 
+## Component hàng đợi phần A — 2026-11-21
+
+- Phần trước đã commit `998ed75`, push nhánh `feature/automatic-machine-assignment` và squash merge PR #3 vào `develop` thành `6d7d316`; không thay đổi main. Các dòng bên dưới là lịch sử của đợt trước.
+- Thêm `QueuePanel.tsx` độc lập: danh sách theo khóa thứ tự nhưng hiển thị vị trí liên tục, số người sẵn sàng phía trước, vào/rời hàng và đổi Sẵn sàng bằng API hiện có. Không sửa `LaundryApp.tsx`, không tạo API mẻ giặt/bàn giao của B.
+- Yêu cầu prop participation do server xác minh; HELD/WASHING không cho vào lại hoặc rời hàng ở panel. Không suy ra NONE chỉ từ việc không có tên trong queue/holds; chưa có API trạng thái cá nhân đầy đủ thì truyền UNKNOWN. Snapshot mâu thuẫn khóa thao tác.
+- Chống gửi lặp, xử lý session hết hạn, lỗi mạng/kết quả chưa rõ, refresh lỗi và response cũ khi đổi tòa. Không optimistic update vì bật Sẵn sàng có thể được giao máy ngay.
+- Thêm 16 test DOM; đã chạy `npm run check`: docs/lint/typecheck đạt, **58/58 test frontend đạt**; `npm run build` và `git diff --check` đạt. Không đổi Java trong đợt này; 28 test Java là kết quả đợt trước.
+- Hướng dẫn ghép/trạng thái/callback trong `src/components/QueuePanel.md`. Chưa nối trang chính, chưa kiểm thử trình duyệt–Java thật, chưa commit/push thay đổi QueuePanel.
+- Việc kế tiếp: thống nhất API trạng thái yêu cầu cá nhân với B và dữ liệu/refresh với C để ghép QueuePanel/MachineHoldCard. Không để C truyền NONE khi thiếu dữ liệu; không tự mở rộng start/unusable khi chưa chốt hợp đồng.
+
 ## Cập nhật phần A — 2026-11-21
 
 - Tiếp tục phần độc lập của A, chưa commit/push và chưa đổi nhánh.
