@@ -29,4 +29,5 @@ public class Membership {
     public Role getRole() { return role; }
     public Status getStatus() { return status; }
     public void approve() { status = Status.APPROVED; }
+    public void setRole(Role role) { this.role = role; }
 }
