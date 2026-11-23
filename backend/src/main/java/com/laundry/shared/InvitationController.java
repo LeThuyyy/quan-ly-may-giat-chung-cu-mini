@@ -1,5 +1,7 @@
 package com.laundry.shared;
 
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
@@ -25,10 +27,22 @@ public class InvitationController {
     public List<InvitationService.MemberView> pending(Authentication authentication, @PathVariable UUID id) {
         return invitations.pending(authentication.getName(), id);
     }
+    @GetMapping("/buildings/{id}/members")
+    public List<InvitationService.BuildingMemberView> members(Authentication authentication, @PathVariable UUID id) {
+        return invitations.members(authentication.getName(), id);
+    }
     @PostMapping("/buildings/{id}/members/{accountId}/approve")
     public void approve(Authentication authentication, @PathVariable UUID id, @PathVariable UUID accountId) {
         invitations.approve(authentication.getName(), id, accountId);
     }
+    @PatchMapping("/buildings/{id}/members/{accountId}/role")
+    public void updateRole(Authentication authentication,
+                           @PathVariable UUID id,
+                           @PathVariable UUID accountId,
+                           @Valid @RequestBody UpdateRoleRequest request) {
+        invitations.updateRole(authentication.getName(), id, accountId, request.role());
+    }
     public record InviteView(String token) {}
     public record JoinView(UUID buildingId, Membership.Status status) {}
+    public record UpdateRoleRequest(@NotNull Membership.Role role) {}
 }

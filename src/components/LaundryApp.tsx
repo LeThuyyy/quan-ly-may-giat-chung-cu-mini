@@ -1,6 +1,11 @@
 'use client';
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
+import AuthSection from '@/components/AuthSection';
+import ConfirmMachineFreeButton from '@/components/ConfirmMachineFreeButton';
+import MachineHoldCard, { MachineHoldView } from '@/components/MachineHoldCard';
+import MemberManagementPanel, { BuildingMember, PendingMember } from '@/components/MemberManagementPanel';
+import QueuePanel, { QueueEntryView, QueueParticipation } from '@/components/QueuePanel';
 
 interface AccountView {
   id: string;
@@ -18,28 +23,28 @@ interface BuildingSummary {
 interface MachineView {
   id: string;
   label: string;
-  status: 'AVAILABLE' | 'MAINTENANCE';
-}
-
-interface QueueView {
-  id: string;
-  accountId: string;
-  displayName: string;
-  position: number;
-  ready: boolean;
+  status: 'AVAILABLE' | 'MAINTENANCE' | 'RUNNING' | 'NEEDS_CHECK';
 }
 
 interface BuildingView {
   id: string;
   name: string;
   machines: MachineView[];
-  queue: QueueView[];
+  queue: QueueEntryView[];
 }
 
-interface PendingMember {
-  id: string;
-  displayName: string;
+interface QueueMeResponse {
+  state: string;
+  queueEntryId: string | null;
+  ready: boolean | null;
+  holdId: string | null;
+  machineId: string | null;
+  expiresAt: string | null;
+  serverNow: string;
 }
+
+const VALID_STATES = new Set<QueueParticipation>(['NONE', 'WAITING', 'HELD', 'WASHING']);
+const POLL_INTERVAL_MS = 5000;
 
 async function apiJson<T>(url: string, init?: RequestInit): Promise<{ ok: boolean; status: number; data?: T; error?: string }> {
   const res = await fetch(url, {
@@ -79,16 +84,18 @@ async function apiJson<T>(url: string, init?: RequestInit): Promise<{ ok: boolea
 export default function LaundryApp() {
   const [account, setAccount] = useState<AccountView | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
-  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
-  const [username, setUsername] = useState('');
-  const [displayName, setDisplayName] = useState('');
-  const [password, setPassword] = useState('');
 
   const [buildings, setBuildings] = useState<BuildingSummary[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [buildingDetail, setBuildingDetail] = useState<BuildingView | null>(null);
+  const [holds, setHolds] = useState<MachineHoldView[]>([]);
+  const [holdsVerified, setHoldsVerified] = useState(false);
+  const [participation, setParticipation] = useState<QueueParticipation>('UNKNOWN');
+  const [verifiedHoldId, setVerifiedHoldId] = useState<string | null>(null);
+
   const [detailError, setDetailError] = useState<string | null>(null);
   const [pendingMembers, setPendingMembers] = useState<PendingMember[]>([]);
+  const [approvedMembers, setApprovedMembers] = useState<BuildingMember[]>([]);
   const [inviteToken, setInviteToken] = useState<string | null>(null);
 
   const [newBuildingName, setNewBuildingName] = useState('');
@@ -106,6 +113,28 @@ export default function LaundryApp() {
   const detailRequestId = useRef(0);
   const buildingDetailFor = useRef<string | null>(null);
 
+  const resetBuildingSnapshot = useCallback(() => {
+    buildingDetailFor.current = null;
+    setBuildingDetail(null);
+    setHolds([]);
+    setHoldsVerified(false);
+    setParticipation('UNKNOWN');
+    setVerifiedHoldId(null);
+    setDetailError(null);
+    setPendingMembers([]);
+    setApprovedMembers([]);
+  }, []);
+
+  const handleSessionExpired = useCallback(() => {
+    detailRequestId.current += 1;
+    resetBuildingSnapshot();
+    setAccount(null);
+    setBuildings([]);
+    setSelectedId(null);
+    setInviteToken(null);
+    setError('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+  }, [resetBuildingSnapshot]);
+
   const loadBuildings = useCallback(async () => {
     const res = await apiJson<BuildingSummary[]>('/api/buildings');
     if (res.ok && res.data) {
@@ -116,68 +145,127 @@ export default function LaundryApp() {
         return firstApproved?.id ?? res.data![0]?.id ?? null;
       });
     } else if (res.status === 401) {
-      setAccount(null);
-      setBuildings([]);
-      setSelectedId(null);
-      setBuildingDetail(null);
-      setDetailError(null);
+      handleSessionExpired();
     } else {
       setError(res.error ?? 'Không tải được danh sách tòa. Hãy thử lại.');
     }
-  }, []);
+  }, [handleSessionExpired]);
 
-  const loadBuildingDetail = useCallback(async (summary: BuildingSummary | null) => {
-    const requestId = ++detailRequestId.current;
-    if (!summary || summary.status !== 'APPROVED') {
-      buildingDetailFor.current = null;
-      setBuildingDetail(null);
-      setDetailError(null);
-      setPendingMembers([]);
-      return;
-    }
-    setDetailError(null);
-    if (buildingDetailFor.current !== summary.id) {
-      buildingDetailFor.current = null;
-      setBuildingDetail(null);
-      setPendingMembers([]);
-    }
+  const loadBuildingDetail = useCallback(
+    async (summary: BuildingSummary | null, options?: { silent?: boolean }) => {
+      const requestId = ++detailRequestId.current;
+      if (!summary || summary.status !== 'APPROVED') {
+        resetBuildingSnapshot();
+        return;
+      }
 
-    try {
-      const detailRes = await apiJson<BuildingView>(`/api/buildings/${summary.id}`);
-      if (requestId !== detailRequestId.current) return;
-      if (detailRes.status === 401) {
-        buildingDetailFor.current = null;
-        setBuildingDetail(null);
-        setAccount(null);
+      const isBuildingSwitch = buildingDetailFor.current !== summary.id;
+      if (isBuildingSwitch) {
+        resetBuildingSnapshot();
+      } else if (!options?.silent) {
         setDetailError(null);
-        return;
       }
-      if (!detailRes.ok || !detailRes.data) {
-        buildingDetailFor.current = null;
-        setBuildingDetail(null);
-        setDetailError(detailRes.error ?? 'Không tải được chi tiết tòa.');
-        return;
-      }
-      buildingDetailFor.current = summary.id;
-      setBuildingDetail(detailRes.data);
 
-      if (summary.role === 'MANAGER') {
-        const pendingRes = await apiJson<PendingMember[]>(`/api/buildings/${summary.id}/members/pending`);
+      try {
+        const [detailRes, queueMeRes, holdsRes] = await Promise.all([
+          apiJson<BuildingView>(`/api/buildings/${summary.id}`),
+          apiJson<QueueMeResponse>(`/api/buildings/${summary.id}/queue/me`),
+          apiJson<MachineHoldView[]>(`/api/buildings/${summary.id}/holds`),
+        ]);
+
         if (requestId !== detailRequestId.current) return;
-        if (pendingRes.ok && pendingRes.data) {
-          setPendingMembers(pendingRes.data);
-        } else {
-          setError(pendingRes.error ?? 'Không tải được danh sách chờ duyệt.');
+
+        if (detailRes.status === 401 || queueMeRes.status === 401 || holdsRes.status === 401) {
+          handleSessionExpired();
+          return;
         }
+
+        if (!detailRes.ok || !detailRes.data) {
+          if (!options?.silent || isBuildingSwitch) {
+            resetBuildingSnapshot();
+            setDetailError(detailRes.error ?? 'Không tải được chi tiết tòa.');
+          }
+          throw new Error(detailRes.error ?? 'Failed to load building detail');
+        }
+
+        buildingDetailFor.current = summary.id;
+        setBuildingDetail(detailRes.data);
+        setDetailError(null);
+
+        const nextHoldsOk = holdsRes.ok && Array.isArray(holdsRes.data);
+        const nextHolds = nextHoldsOk ? holdsRes.data! : [];
+        setHolds(nextHolds);
+        setHoldsVerified(nextHoldsOk);
+
+        // Xác minh trạng thái yêu cầu cá nhân theo hợp đồng api-trang-thai-ca-nhan.md
+        if (!queueMeRes.ok || !queueMeRes.data) {
+          setParticipation('UNKNOWN');
+          setVerifiedHoldId(null);
+        } else {
+          const rawState = queueMeRes.data.state as QueueParticipation;
+          if (!VALID_STATES.has(rawState)) {
+            setParticipation('UNKNOWN');
+            setVerifiedHoldId(null);
+          } else if (rawState === 'WAITING') {
+            const matchesQueue = Boolean(
+              queueMeRes.data.queueEntryId &&
+              detailRes.data.queue.some((q) => q.id === queueMeRes.data!.queueEntryId),
+            );
+            setParticipation(matchesQueue ? 'WAITING' : 'UNKNOWN');
+            setVerifiedHoldId(null);
+          } else if (rawState === 'HELD') {
+            const matchedHold = queueMeRes.data.holdId
+              ? nextHolds.find((h) => h.id === queueMeRes.data!.holdId)
+              : null;
+            if (matchedHold && nextHoldsOk) {
+              setParticipation('HELD');
+              setVerifiedHoldId(matchedHold.id);
+            } else {
+              setParticipation('UNKNOWN');
+              setVerifiedHoldId(null);
+            }
+          } else {
+            // NONE hoặc WASHING
+            setParticipation(rawState);
+            setVerifiedHoldId(null);
+          }
+        }
+
+        if (summary.role === 'MANAGER') {
+          const [pendingRes, membersRes] = await Promise.all([
+            apiJson<PendingMember[]>(`/api/buildings/${summary.id}/members/pending`),
+            apiJson<BuildingMember[]>(`/api/buildings/${summary.id}/members`),
+          ]);
+          if (requestId !== detailRequestId.current) return;
+          if (pendingRes.ok && pendingRes.data) {
+            setPendingMembers(pendingRes.data);
+          } else if (!options?.silent) {
+            setError(pendingRes.error ?? 'Không tải được danh sách chờ duyệt.');
+          }
+          if (membersRes.ok && membersRes.data) {
+            setApprovedMembers(membersRes.data);
+          } else if (!options?.silent) {
+            setError(membersRes.error ?? 'Không tải được danh sách thành viên.');
+          }
+        } else {
+          setPendingMembers([]);
+          setApprovedMembers([]);
+        }
+      } catch (err) {
+        if (requestId === detailRequestId.current && (!options?.silent || isBuildingSwitch)) {
+          resetBuildingSnapshot();
+          setDetailError('Kết nối bị gián đoạn. Hãy thử tải lại dữ liệu tòa.');
+        }
+        throw err;
       }
-    } catch {
-      if (requestId === detailRequestId.current) {
-        buildingDetailFor.current = null;
-        setBuildingDetail(null);
-        setDetailError('Kết nối bị gián đoạn. Hãy thử tải lại dữ liệu tòa.');
-      }
-    }
-  }, []);
+    },
+    [handleSessionExpired, resetBuildingSnapshot],
+  );
+
+  const refreshSelectedBuilding = useCallback(async () => {
+    if (!selectedId || !selectedRole || !selectedStatus) return;
+    await loadBuildingDetail({ id: selectedId, name: '', role: selectedRole, status: selectedStatus });
+  }, [selectedId, selectedRole, selectedStatus, loadBuildingDetail]);
 
   useEffect(() => {
     let active = true;
@@ -196,35 +284,72 @@ export default function LaundryApp() {
   }, [loadBuildings]);
 
   useEffect(() => {
-    const summary: BuildingSummary | null = selectedId && selectedRole && selectedStatus
-      ? { id: selectedId, name: '', role: selectedRole, status: selectedStatus }
-      : null;
-    // Defer the state update to the asynchronous load; do not set state during effect setup.
-    void Promise.resolve().then(() => loadBuildingDetail(summary));
-    return () => { detailRequestId.current += 1; };
+    const summary: BuildingSummary | null =
+      selectedId && selectedRole && selectedStatus
+        ? { id: selectedId, name: '', role: selectedRole, status: selectedStatus }
+        : null;
+    void Promise.resolve().then(() => loadBuildingDetail(summary).catch(() => {}));
+    return () => {
+      detailRequestId.current += 1;
+    };
   }, [selectedId, selectedRole, selectedStatus, loadBuildingDetail]);
 
-  const handleAuthSubmit = async (e: FormEvent) => {
-    e.preventDefault();
+  // Polling chung do component cha sở hữu khi đang mở trang
+  useEffect(() => {
+    if (!account || !selectedId || !selectedRole || selectedStatus !== 'APPROVED') return;
+
+    const summary: BuildingSummary = {
+      id: selectedId,
+      name: '',
+      role: selectedRole,
+      status: selectedStatus,
+    };
+
+    const tick = () => {
+      if (document.visibilityState === 'visible') {
+        void loadBuildingDetail(summary, { silent: true }).catch(() => {});
+      }
+    };
+
+    const intervalId = window.setInterval(tick, POLL_INTERVAL_MS);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        void loadBuildingDetail(summary, { silent: true }).catch(() => {});
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [account, selectedId, selectedRole, selectedStatus, loadBuildingDetail]);
+
+  const handleRegister = async (username: string, displayName: string, password: string): Promise<boolean> => {
     setError(null);
     setNotice(null);
     setBusy(true);
     try {
-      if (authMode === 'register') {
-        const res = await apiJson<AccountView>('/api/auth/register', {
-          method: 'POST',
-          body: JSON.stringify({ username, displayName, password }),
-        });
-        if (!res.ok) {
-          setError(res.error ?? 'Đăng ký thất bại.');
-          return;
-        }
-        setNotice('Đăng ký thành công. Vui lòng đăng nhập để tiếp tục.');
-        setAuthMode('login');
-        setPassword('');
-        return;
+      const res = await apiJson<AccountView>('/api/auth/register', {
+        method: 'POST',
+        body: JSON.stringify({ username, displayName, password }),
+      });
+      if (!res.ok) {
+        setError(res.error ?? 'Đăng ký thất bại.');
+        return false;
       }
+      setNotice('Đăng ký thành công. Vui lòng đăng nhập để tiếp tục.');
+      return true;
+    } finally {
+      setBusy(false);
+    }
+  };
 
+  const handleLogin = async (username: string, password: string) => {
+    setError(null);
+    setNotice(null);
+    setBusy(true);
+    try {
       const res = await apiJson<AccountView>('/api/auth/login', {
         method: 'POST',
         body: JSON.stringify({ username, password }),
@@ -234,7 +359,6 @@ export default function LaundryApp() {
         return;
       }
       setAccount(res.data);
-      setPassword('');
       await loadBuildings();
     } finally {
       setBusy(false);
@@ -248,13 +372,10 @@ export default function LaundryApp() {
     try {
       await apiJson('/api/auth/logout', { method: 'POST' });
       detailRequestId.current += 1;
-      buildingDetailFor.current = null;
+      resetBuildingSnapshot();
       setAccount(null);
       setBuildings([]);
       setSelectedId(null);
-      setBuildingDetail(null);
-      setDetailError(null);
-      setPendingMembers([]);
       setInviteToken(null);
       setNotice('Đã đăng xuất.');
     } finally {
@@ -391,63 +512,32 @@ export default function LaundryApp() {
     }
   };
 
-  const handleJoinQueue = async (ready: boolean) => {
+  const handleChangeMemberRole = async (accountId: string, role: 'MANAGER' | 'RESIDENT') => {
     if (!selectedSummary) return;
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
-      const res = await apiJson(`/api/buildings/${selectedSummary.id}/queue`, {
-        method: 'POST',
-        body: JSON.stringify({ ready }),
-      });
-      if (!res.ok) {
-        setError(res.error ?? 'Không vào được hàng đợi.');
-        return;
-      }
-      await loadBuildingDetail(selectedSummary);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const handleToggleReady = async (ready: boolean) => {
-    if (!selectedSummary) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const res = await apiJson(`/api/buildings/${selectedSummary.id}/queue/me`, {
+      const res = await apiJson(`/api/buildings/${selectedSummary.id}/members/${accountId}/role`, {
         method: 'PATCH',
-        body: JSON.stringify({ ready }),
+        body: JSON.stringify({ role }),
       });
       if (!res.ok) {
-        setError(res.error ?? 'Không đổi được trạng thái sẵn sàng.');
+        setError(res.error ?? 'Không cập nhật được vai trò thành viên.');
         return;
       }
+      setNotice(role === 'MANAGER' ? 'Đã cấp quyền quản lý.' : 'Đã hạ vai trò về cư dân.');
+      await loadBuildings();
       await loadBuildingDetail(selectedSummary);
     } finally {
       setBusy(false);
     }
   };
 
-  const handleLeaveQueue = async () => {
-    if (!selectedSummary) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const res = await apiJson(`/api/buildings/${selectedSummary.id}/queue/me`, {
-        method: 'DELETE',
-      });
-      if (!res.ok) {
-        setError(res.error ?? 'Không rời được hàng đợi.');
-        return;
-      }
-      await loadBuildingDetail(selectedSummary);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const myQueueEntry = buildingDetail?.queue.find((q) => q.accountId === account?.id) ?? null;
+  const myHold =
+    participation === 'HELD' && verifiedHoldId
+      ? holds.find((item) => item.id === verifiedHoldId && item.accountId === account?.id) ?? null
+      : null;
 
   return (
     <main className="shell">
@@ -482,81 +572,15 @@ export default function LaundryApp() {
           <p>Đang kiểm tra phiên đăng nhập...</p>
         </section>
       ) : !account ? (
-        <section className="auth-grid">
-          <div className="hero-compact">
-            <p className="eyebrow">CHUNG MÁY · KHÔNG CHUNG NỖI LO</p>
-            <h1>Hàng đợi giặt chung cho tòa nhà.</h1>
-            <p className="lead">
-              Đăng nhập bằng phiên bảo mật qua máy chủ Java. Tạo tòa (1–30 máy), mời cư dân và xếp hàng minh bạch.
-            </p>
-            <p className="muted-note">
-              Phạm vi hiện tại: chưa có giao máy tự động, đồng hồ 8 phút, ETA, đổi lượt hoặc chat.
-            </p>
-          </div>
-
-          <form className="panel" onSubmit={handleAuthSubmit}>
-            <div className="tabs">
-              <button
-                type="button"
-                className={authMode === 'login' ? 'tab active' : 'tab'}
-                onClick={() => { setAuthMode('login'); setError(null); }}
-              >
-                Đăng nhập
-              </button>
-              <button
-                type="button"
-                className={authMode === 'register' ? 'tab active' : 'tab'}
-                onClick={() => { setAuthMode('register'); setError(null); }}
-              >
-                Đăng ký
-              </button>
-            </div>
-
-            <label className="field">
-              <span>Tên đăng nhập</span>
-              <input
-                type="text"
-                required
-                maxLength={80}
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="vd: phong302"
-                autoComplete="username"
-              />
-            </label>
-
-            {authMode === 'register' && (
-              <label className="field">
-                <span>Tên hiển thị</span>
-                <input
-                  type="text"
-                  required
-                  maxLength={80}
-                  value={displayName}
-                  onChange={(e) => setDisplayName(e.target.value)}
-                  placeholder="vd: Phòng 302 - An"
-                />
-              </label>
-            )}
-
-            <label className="field">
-              <span>Mật khẩu {authMode === 'register' ? '(tối thiểu 12 ký tự)' : ''}</span>
-              <input
-                type="password"
-                required
-                minLength={authMode === 'register' ? 12 : 1}
-                maxLength={128}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                autoComplete={authMode === 'login' ? 'current-password' : 'new-password'}
-              />
-            </label>
-
-            <button type="submit" className="btn btn-primary" disabled={busy}>
-              {busy ? 'Đang xử lý...' : authMode === 'login' ? 'Đăng nhập' : 'Tạo tài khoản'}
-            </button>
-          </form>
-        </section>
+        <AuthSection
+          busy={busy}
+          onLogin={handleLogin}
+          onRegister={handleRegister}
+          onClearMessages={() => {
+            setError(null);
+            setNotice(null);
+          }}
+        />
       ) : (
         <section className="workspace">
           <aside className="sidebar">
@@ -571,7 +595,10 @@ export default function LaundryApp() {
                       <button
                         type="button"
                         className={b.id === selectedId ? 'building-item active' : 'building-item'}
-                        onClick={() => { setSelectedId(b.id); setInviteToken(null); }}
+                        onClick={() => {
+                          setSelectedId(b.id);
+                          setInviteToken(null);
+                        }}
                       >
                         <strong>{b.name}</strong>
                         <span>
@@ -645,7 +672,12 @@ export default function LaundryApp() {
             ) : detailError ? (
               <div className="panel" role="alert">
                 <p>{detailError}</p>
-                <button type="button" className="btn btn-outline" onClick={() => void loadBuildingDetail(selectedSummary)} disabled={busy}>
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  onClick={() => void loadBuildingDetail(selectedSummary).catch(() => {})}
+                  disabled={busy}
+                >
                   Thử tải lại
                 </button>
               </div>
@@ -661,80 +693,73 @@ export default function LaundryApp() {
                     <button
                       type="button"
                       className="btn btn-outline"
-                      onClick={() => void loadBuildingDetail(selectedSummary)}
+                      onClick={() => void loadBuildingDetail(selectedSummary).catch(() => {})}
                       disabled={busy}
                     >
                       Làm mới
                     </button>
                   </div>
-
-                  <div className="queue-actions">
-                    {!myQueueEntry ? (
-                      <>
-                        <button type="button" className="btn btn-primary" onClick={() => void handleJoinQueue(true)} disabled={busy}>
-                          Vào hàng (Sẵn sàng)
-                        </button>
-                        <button type="button" className="btn btn-outline" onClick={() => void handleJoinQueue(false)} disabled={busy}>
-                          Vào hàng (Chưa sẵn sàng)
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <button
-                          type="button"
-                          className="btn btn-primary"
-                          onClick={() => void handleToggleReady(!myQueueEntry.ready)}
-                          disabled={busy}
-                        >
-                          {myQueueEntry.ready ? 'Chuyển sang Chưa sẵn sàng' : 'Bật Sẵn sàng'}
-                        </button>
-                        <button type="button" className="btn btn-danger" onClick={() => void handleLeaveQueue()} disabled={busy}>
-                          Rời hàng
-                        </button>
-                      </>
-                    )}
-                  </div>
-
-                  <h3>Hàng đợi hiện tại ({buildingDetail.queue.length})</h3>
-                  {buildingDetail.queue.length === 0 ? (
-                    <p className="muted-note">Chưa có ai trong hàng đợi.</p>
-                  ) : (
-                    <ul className="queue-list">
-                      {buildingDetail.queue.map((entry, idx) => (
-                        <li key={entry.id} className={entry.accountId === account.id ? 'queue-row me' : 'queue-row'}>
-                          <span>
-                            <strong>#{idx + 1}</strong> {entry.displayName} (mốc {entry.position})
-                          </span>
-                          <span className={entry.ready ? 'pill pill-ready' : 'pill pill-wait'}>
-                            {entry.ready ? 'Sẵn sàng' : 'Chưa sẵn sàng'}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
+                  <p className="muted-note">
+                    Thời gian dự kiến chỉ mang tính tham khảo, không chứng minh máy đã dừng. Luôn kiểm tra thực tế tại máy trước khi sử dụng.
+                  </p>
                 </div>
+
+                <MachineHoldCard
+                  buildingId={selectedSummary.id}
+                  accountId={account.id}
+                  hold={myHold}
+                  machineLabel={buildingDetail.machines.find((machine) => machine.id === myHold?.machineId)?.label}
+                  onRefresh={refreshSelectedBuilding}
+                  onSessionExpired={handleSessionExpired}
+                />
+
+                <QueuePanel
+                  buildingId={selectedSummary.id}
+                  accountId={account.id}
+                  entries={buildingDetail.queue}
+                  participation={participation}
+                  onRefresh={refreshSelectedBuilding}
+                  onSessionExpired={handleSessionExpired}
+                />
 
                 <div className="panel">
                   <h3>Danh sách máy ({buildingDetail.machines.length}/30)</h3>
                   <p className="muted-note">
-                    Trạng thái &quot;Đang mở&quot; chỉ có nghĩa quản lý chưa đánh dấu bảo trì; chưa theo dõi lồng giặt thực tế.
+                    Trạng thái &quot;Đang mở&quot; cho biết máy không bảo trì; quản lý xác nhận lồng giặt trống nếu máy bị kẹt sau bàn giao.
                   </p>
                   <div className="machine-grid">
                     {buildingDetail.machines.map((m) => (
                       <div key={m.id} className="machine-card">
                         <strong>{m.label}</strong>
                         <span className={m.status === 'AVAILABLE' ? 'pill pill-ready' : 'pill pill-maint'}>
-                          {m.status === 'AVAILABLE' ? 'Đang mở' : 'Bảo trì'}
+                          {m.status === 'AVAILABLE'
+                            ? 'Đang mở'
+                            : m.status === 'RUNNING'
+                              ? 'Đang giặt'
+                              : m.status === 'NEEDS_CHECK'
+                                ? 'Cần kiểm tra'
+                                : 'Bảo trì'}
                         </span>
                         {selectedSummary.role === 'MANAGER' && (
-                          <button
-                            type="button"
-                            className="btn btn-outline btn-sm"
-                            onClick={() => void handleToggleMaintenance(m)}
-                            disabled={busy}
-                          >
-                            {m.status === 'MAINTENANCE' ? 'Mở lại máy' : 'Đánh dấu bảo trì'}
-                          </button>
+                          <div className="queue-actions">
+                            <button
+                              type="button"
+                              className="btn btn-outline btn-sm"
+                              onClick={() => void handleToggleMaintenance(m)}
+                              disabled={busy}
+                            >
+                              {m.status === 'MAINTENANCE' ? 'Mở lại máy' : 'Đánh dấu bảo trì'}
+                            </button>
+                            <ConfirmMachineFreeButton
+                              buildingId={selectedSummary.id}
+                              accountId={account.id}
+                              isManager={selectedSummary.role === 'MANAGER'}
+                              machine={m}
+                              hasActiveHold={holdsVerified ? holds.some((h) => h.machineId === m.id) : null}
+                              onRefresh={refreshSelectedBuilding}
+                              onSessionExpired={handleSessionExpired}
+                            />
+                          </div>
                         )}
                       </div>
                     ))}
@@ -758,40 +783,16 @@ export default function LaundryApp() {
                 </div>
 
                 {selectedSummary.role === 'MANAGER' && (
-                  <div className="panel">
-                    <h3>Quản lý cư dân</h3>
-                    <div className="invite-box">
-                      <button type="button" className="btn btn-outline" onClick={() => void handleCreateInvite()} disabled={busy}>
-                        Tạo mã mời 7 ngày
-                      </button>
-                      {inviteToken && (
-                        <div className="token-box">
-                          <code>{inviteToken}</code>
-                        </div>
-                      )}
-                    </div>
-
-                    <h4>Yêu cầu chờ duyệt ({pendingMembers.length})</h4>
-                    {pendingMembers.length === 0 ? (
-                      <p className="muted-note">Không có yêu cầu nào đang chờ duyệt.</p>
-                    ) : (
-                      <ul className="queue-list">
-                        {pendingMembers.map((m) => (
-                          <li key={m.id} className="queue-row">
-                            <span>{m.displayName}</span>
-                            <button
-                              type="button"
-                              className="btn btn-primary btn-sm"
-                              onClick={() => void handleApproveMember(m.id)}
-                              disabled={busy}
-                            >
-                              Duyệt
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
+                  <MemberManagementPanel
+                    currentAccountId={account.id}
+                    busy={busy}
+                    inviteToken={inviteToken}
+                    pendingMembers={pendingMembers}
+                    approvedMembers={approvedMembers}
+                    onCreateInvite={handleCreateInvite}
+                    onApproveMember={handleApproveMember}
+                    onChangeRole={handleChangeMemberRole}
+                  />
                 )}
               </>
             )}
@@ -800,7 +801,7 @@ export default function LaundryApp() {
       )}
 
       <footer>
-        Giao diện Next.js kết nối phiên bảo mật tới backend Spring Boot Java · Chưa có giao máy tự động, đồng hồ 8 phút, ETA, đổi lượt hoặc chat.
+        Giao diện Next.js kết nối phiên bảo mật tới backend Spring Boot Java · Đóng trang không gia hạn giữ lượt 8 phút.
       </footer>
     </main>
   );

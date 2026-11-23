@@ -9,6 +9,7 @@ import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.Comparator;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.UUID;
@@ -64,14 +65,57 @@ public class InvitationService {
             .map(m -> accounts.findById(m.getAccountId()).orElseThrow())
             .map(a -> new MemberView(a.getId(), a.getDisplayName())).toList();
     }
+    @Transactional(readOnly = true)
+    public List<BuildingMemberView> members(String username, UUID buildingId) {
+        requireManager(username, buildingId);
+        return memberships.findByBuilding_IdAndStatus(buildingId, Membership.Status.APPROVED).stream()
+            .map(m -> {
+                Account acc = accounts.findById(m.getAccountId()).orElseThrow();
+                return new BuildingMemberView(acc.getId(), acc.getUsername(), acc.getDisplayName(), m.getRole(), m.getStatus());
+            })
+            .sorted(Comparator
+                .comparing((BuildingMemberView v) -> v.role() != Membership.Role.MANAGER)
+                .thenComparing(BuildingMemberView::displayName, String.CASE_INSENSITIVE_ORDER))
+            .toList();
+    }
     @Transactional
     public void approve(String username, UUID buildingId, UUID accountId) {
+        buildings.findLockedById(buildingId).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
         requireManager(username, buildingId);
         Membership membership = memberships.findByBuilding_IdAndAccount_Id(buildingId, accountId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
         if (membership.getRole() != Membership.Role.RESIDENT || membership.getStatus() != Membership.Status.PENDING)
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Không có yêu cầu chờ duyệt");
         membership.approve();
+    }
+    @Transactional
+    public void updateRole(String username, UUID buildingId, UUID targetAccountId, Membership.Role newRole) {
+        if (newRole == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Vai trò không hợp lệ");
+        }
+        buildings.findLockedById(buildingId).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+        requireManager(username, buildingId);
+
+        Membership target = memberships.findByBuilding_IdAndAccount_Id(buildingId, targetAccountId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy thành viên trong tòa"));
+
+        if (target.getStatus() != Membership.Status.APPROVED) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Chỉ có thể phân quyền cho thành viên đã được duyệt");
+        }
+
+        if (target.getRole() == newRole) {
+            return;
+        }
+
+        if (target.getRole() == Membership.Role.MANAGER && newRole == Membership.Role.RESIDENT) {
+            long managerCount = memberships.countByBuilding_IdAndRoleAndStatus(
+                buildingId, Membership.Role.MANAGER, Membership.Status.APPROVED);
+            if (managerCount <= 1) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Không thể hạ quyền quản lý cuối cùng của tòa");
+            }
+        }
+
+        target.setRole(newRole);
     }
     private void requireManager(String username, UUID buildingId) {
         Account user = laundry.account(username);
@@ -82,4 +126,5 @@ public class InvitationService {
     }
     public record JoinResult(UUID buildingId, Membership.Status status) {}
     public record MemberView(UUID id, String displayName) {}
+    public record BuildingMemberView(UUID id, String username, String displayName, Membership.Role role, Membership.Status status) {}
 }

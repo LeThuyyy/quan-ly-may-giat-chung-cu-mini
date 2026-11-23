@@ -35,6 +35,29 @@ class LaundryApiTest {
         return session;
     }
 
+    private String accountIdOf(MockHttpSession session) throws Exception {
+        String me = mvc.perform(get("/api/me").session(session))
+            .andExpect(status().isOk())
+            .andReturn().getResponse().getContentAsString();
+        return mapper.readTree(me).get("id").asText();
+    }
+
+    private String createBuilding(MockHttpSession session, String name, int machines) throws Exception {
+        String response = mvc.perform(post("/api/buildings").session(session).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"name\":\"" + name + "\",\"machineCount\":" + machines + "}"))
+            .andExpect(status().isCreated())
+            .andReturn().getResponse().getContentAsString();
+        return mapper.readTree(response).get("id").asText();
+    }
+
+    private String createInvite(MockHttpSession managerSession, String buildingId) throws Exception {
+        String response = mvc.perform(post("/api/buildings/" + buildingId + "/invitations").session(managerSession).with(csrf()))
+            .andExpect(status().isCreated())
+            .andReturn().getResponse().getContentAsString();
+        return mapper.readTree(response).get("token").asText();
+    }
+
     @Test void registrationRequiresCsrfAndReadRequiresAuthentication() throws Exception {
         String body = "{\"username\":\"owner\",\"displayName\":\"Owner\",\"password\":\"strong-password-123\"}";
         mvc.perform(post("/api/accounts").contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isForbidden());
@@ -80,5 +103,105 @@ class LaundryApiTest {
                 .contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"Tòa A\",\"machineCount\":2}"))
             .andExpect(status().isForbidden());
         mvc.perform(get("/api/csrf")).andExpect(status().isOk()).andExpect(jsonPath("$.token").isNotEmpty());
+    }
+
+    @Test void multipleManagersCanManageBuildingAndCannotDemoteLastManager() throws Exception {
+        MockHttpSession manager1 = registerAndLogin("mgr-one", "Quản lý 1");
+        String manager1Id = accountIdOf(manager1);
+        String buildingId = createBuilding(manager1, "Tòa Đa Quản Lý", 2);
+        String token = createInvite(manager1, buildingId);
+
+        MockHttpSession manager2 = registerAndLogin("mgr-two", "Quản lý 2");
+        String manager2Id = accountIdOf(manager2);
+        mvc.perform(post("/api/invitations/" + token + "/join").session(manager2).with(csrf()))
+            .andExpect(status().isAccepted());
+
+        // Chưa duyệt thì chưa thể cấp quyền quản lý
+        mvc.perform(patch("/api/buildings/" + buildingId + "/members/" + manager2Id + "/role")
+                .session(manager1).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"role\":\"MANAGER\"}"))
+            .andExpect(status().isBadRequest());
+
+        // Duyệt và cấp quyền quản lý cho người thứ 2
+        mvc.perform(post("/api/buildings/" + buildingId + "/members/" + manager2Id + "/approve")
+                .session(manager1).with(csrf()))
+            .andExpect(status().isOk());
+        mvc.perform(patch("/api/buildings/" + buildingId + "/members/" + manager2Id + "/role")
+                .session(manager1).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"role\":\"MANAGER\"}"))
+            .andExpect(status().isOk());
+
+        // Quản lý 2 có quyền tạo mã mời và duyệt cư dân thứ 3
+        MockHttpSession resident = registerAndLogin("res-three", "Cư dân 3");
+        String residentId = accountIdOf(resident);
+        String token2 = createInvite(manager2, buildingId);
+        mvc.perform(post("/api/invitations/" + token2 + "/join").session(resident).with(csrf()))
+            .andExpect(status().isAccepted());
+        mvc.perform(post("/api/buildings/" + buildingId + "/members/" + residentId + "/approve")
+                .session(manager2).with(csrf()))
+            .andExpect(status().isOk());
+
+        // Quản lý 2 có thể hạ quyền Quản lý 1 xuống RESIDENT vì vẫn còn Quản lý 2
+        mvc.perform(patch("/api/buildings/" + buildingId + "/members/" + manager1Id + "/role")
+                .session(manager2).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"role\":\"RESIDENT\"}"))
+            .andExpect(status().isOk());
+
+        // Quản lý 2 (người quản lý cuối cùng) tự hạ quyền của chính mình phải bị từ chối (400)
+        mvc.perform(patch("/api/buildings/" + buildingId + "/members/" + manager2Id + "/role")
+                .session(manager2).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"role\":\"RESIDENT\"}"))
+            .andExpect(status().isBadRequest());
+    }
+
+    @Test void unapprovedResidentSelfPromotionAndCrossBuildingAccessAreBlocked() throws Exception {
+        MockHttpSession managerA = registerAndLogin("mgr-a", "Quản lý A");
+        String buildingA = createBuilding(managerA, "Tòa A", 2);
+        String tokenA = createInvite(managerA, buildingA);
+
+        MockHttpSession managerB = registerAndLogin("mgr-b", "Quản lý B");
+        String buildingB = createBuilding(managerB, "Tòa B", 2);
+
+        MockHttpSession resident = registerAndLogin("res-a", "Cư dân A");
+        String residentId = accountIdOf(resident);
+
+        // Tham gia tòa A (trạng thái PENDING)
+        mvc.perform(post("/api/invitations/" + tokenA + "/join").session(resident).with(csrf()))
+            .andExpect(status().isAccepted())
+            .andExpect(jsonPath("$.status").value("PENDING"));
+
+        // Cư dân chưa duyệt không thể xem chi tiết tòa hay vào hàng đợi
+        mvc.perform(get("/api/buildings/" + buildingA).session(resident))
+            .andExpect(status().isForbidden());
+        mvc.perform(post("/api/buildings/" + buildingA + "/queue").session(resident).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON).content("{\"ready\":true}"))
+            .andExpect(status().isForbidden());
+
+        // Quản lý A duyệt cư dân
+        mvc.perform(post("/api/buildings/" + buildingA + "/members/" + residentId + "/approve")
+                .session(managerA).with(csrf()))
+            .andExpect(status().isOk());
+
+        // Cư dân đã duyệt không thể tự nâng quyền mình lên MANAGER
+        mvc.perform(patch("/api/buildings/" + buildingA + "/members/" + residentId + "/role")
+                .session(resident).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"role\":\"MANAGER\"}"))
+            .andExpect(status().isForbidden());
+
+        // Quản lý tòa B không thể xem hay chỉnh sửa thành viên/máy của tòa A
+        mvc.perform(get("/api/buildings/" + buildingA + "/members").session(managerB))
+            .andExpect(status().isForbidden());
+        mvc.perform(patch("/api/buildings/" + buildingA + "/members/" + residentId + "/role")
+                .session(managerB).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"role\":\"MANAGER\"}"))
+            .andExpect(status().isForbidden());
+        mvc.perform(get("/api/buildings/" + buildingB).session(managerB))
+            .andExpect(status().isOk());
     }
 }
