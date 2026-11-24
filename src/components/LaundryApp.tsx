@@ -94,6 +94,7 @@ export default function LaundryApp() {
   const [verifiedHoldId, setVerifiedHoldId] = useState<string | null>(null);
 
   const [detailError, setDetailError] = useState<string | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
   const [pendingMembers, setPendingMembers] = useState<PendingMember[]>([]);
   const [approvedMembers, setApprovedMembers] = useState<BuildingMember[]>([]);
   const [inviteToken, setInviteToken] = useState<string | null>(null);
@@ -113,6 +114,12 @@ export default function LaundryApp() {
   const detailRequestId = useRef(0);
   const buildingDetailFor = useRef<string | null>(null);
 
+  const clearManagerState = useCallback(() => {
+    setPendingMembers([]);
+    setApprovedMembers([]);
+    setInviteToken(null);
+  }, []);
+
   const resetBuildingSnapshot = useCallback(() => {
     buildingDetailFor.current = null;
     setBuildingDetail(null);
@@ -121,9 +128,9 @@ export default function LaundryApp() {
     setParticipation('UNKNOWN');
     setVerifiedHoldId(null);
     setDetailError(null);
-    setPendingMembers([]);
-    setApprovedMembers([]);
-  }, []);
+    setSyncError(null);
+    clearManagerState();
+  }, [clearManagerState]);
 
   const handleSessionExpired = useCallback(() => {
     detailRequestId.current += 1;
@@ -131,7 +138,6 @@ export default function LaundryApp() {
     setAccount(null);
     setBuildings([]);
     setSelectedId(null);
-    setInviteToken(null);
     setError('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
   }, [resetBuildingSnapshot]);
 
@@ -164,10 +170,12 @@ export default function LaundryApp() {
         resetBuildingSnapshot();
       } else if (!options?.silent) {
         setDetailError(null);
+        setSyncError(null);
       }
 
       try {
-        const [detailRes, queueMeRes, holdsRes] = await Promise.all([
+        const [buildingsRes, detailRes, queueMeRes, holdsRes] = await Promise.all([
+          apiJson<BuildingSummary[]>('/api/buildings'),
           apiJson<BuildingView>(`/api/buildings/${summary.id}`),
           apiJson<QueueMeResponse>(`/api/buildings/${summary.id}/queue/me`),
           apiJson<MachineHoldView[]>(`/api/buildings/${summary.id}/holds`),
@@ -175,15 +183,45 @@ export default function LaundryApp() {
 
         if (requestId !== detailRequestId.current) return;
 
-        if (detailRes.status === 401 || queueMeRes.status === 401 || holdsRes.status === 401) {
+        if (
+          buildingsRes.status === 401 ||
+          detailRes.status === 401 ||
+          queueMeRes.status === 401 ||
+          holdsRes.status === 401
+        ) {
           handleSessionExpired();
           return;
         }
 
+        // Cập nhật lại vai trò và trạng thái thành viên mới nhất từ server
+        if (buildingsRes.ok && Array.isArray(buildingsRes.data)) {
+          setBuildings(buildingsRes.data);
+          const freshSummary = buildingsRes.data.find((b) => b.id === summary.id);
+          if (!freshSummary) {
+            resetBuildingSnapshot();
+            setDetailError('Bạn không còn quyền truy cập tòa nhà này.');
+            return;
+          }
+          if (summary.role === 'MANAGER' && freshSummary.role !== 'MANAGER') {
+            clearManagerState();
+            setNotice('Vai trò của bạn đã được cập nhật thành Cư dân.');
+          }
+          if (freshSummary.status !== 'APPROVED') {
+            resetBuildingSnapshot();
+            return;
+          }
+        }
+
         if (!detailRes.ok || !detailRes.data) {
+          setParticipation('UNKNOWN');
+          setVerifiedHoldId(null);
+          setHolds([]);
+          setHoldsVerified(false);
           if (!options?.silent || isBuildingSwitch) {
             resetBuildingSnapshot();
             setDetailError(detailRes.error ?? 'Không tải được chi tiết tòa.');
+          } else {
+            setSyncError('Refresh thất bại: không tải được dữ liệu tòa mới nhất. Thao tác đã tạm khóa.');
           }
           throw new Error(detailRes.error ?? 'Failed to load building detail');
         }
@@ -192,51 +230,86 @@ export default function LaundryApp() {
         setBuildingDetail(detailRes.data);
         setDetailError(null);
 
+        // Nếu queue/me hoặc holds lỗi: khóa thao tác, báo refresh thất bại, không coi dữ liệu cũ là đã cập nhật
         const nextHoldsOk = holdsRes.ok && Array.isArray(holdsRes.data);
-        const nextHolds = nextHoldsOk ? holdsRes.data! : [];
-        setHolds(nextHolds);
-        setHoldsVerified(nextHoldsOk);
-
-        // Xác minh trạng thái yêu cầu cá nhân theo hợp đồng api-trang-thai-ca-nhan.md
-        if (!queueMeRes.ok || !queueMeRes.data) {
+        if (!queueMeRes.ok || !queueMeRes.data || !nextHoldsOk) {
+          setHolds([]);
+          setHoldsVerified(false);
           setParticipation('UNKNOWN');
           setVerifiedHoldId(null);
-        } else {
-          const rawState = queueMeRes.data.state as QueueParticipation;
-          if (!VALID_STATES.has(rawState)) {
-            setParticipation('UNKNOWN');
-            setVerifiedHoldId(null);
-          } else if (rawState === 'WAITING') {
-            const matchesQueue = Boolean(
-              queueMeRes.data.queueEntryId &&
-              detailRes.data.queue.some((q) => q.id === queueMeRes.data!.queueEntryId),
-            );
-            setParticipation(matchesQueue ? 'WAITING' : 'UNKNOWN');
-            setVerifiedHoldId(null);
-          } else if (rawState === 'HELD') {
-            const matchedHold = queueMeRes.data.holdId
-              ? nextHolds.find((h) => h.id === queueMeRes.data!.holdId)
-              : null;
-            if (matchedHold && nextHoldsOk) {
-              setParticipation('HELD');
-              setVerifiedHoldId(matchedHold.id);
-            } else {
-              setParticipation('UNKNOWN');
-              setVerifiedHoldId(null);
-            }
-          } else {
-            // NONE hoặc WASHING
-            setParticipation(rawState);
-            setVerifiedHoldId(null);
-          }
+          setSyncError(
+            'Refresh thất bại: không thể đồng bộ trạng thái hàng đợi hoặc giữ máy mới nhất. Các thao tác đã tạm khóa, vui lòng tải lại.',
+          );
+          throw new Error('Failed to refresh queue/me or holds');
         }
 
-        if (summary.role === 'MANAGER') {
+        const nextHolds = holdsRes.data!;
+        setHolds(nextHolds);
+        setHoldsVerified(true);
+
+        // Xác minh trạng thái yêu cầu cá nhân theo hợp đồng api-trang-thai-ca-nhan.md
+        const rawState = queueMeRes.data.state as QueueParticipation;
+        if (!VALID_STATES.has(rawState)) {
+          setParticipation('UNKNOWN');
+          setVerifiedHoldId(null);
+          setSyncError('Refresh thất bại: trạng thái cá nhân không xác định. Vui lòng tải lại.');
+          throw new Error('Unknown participation state');
+        } else if (rawState === 'WAITING') {
+          const matchesQueue = Boolean(
+            queueMeRes.data.queueEntryId &&
+            detailRes.data.queue.some((q) => q.id === queueMeRes.data!.queueEntryId),
+          );
+          if (!matchesQueue) {
+            setParticipation('UNKNOWN');
+            setVerifiedHoldId(null);
+            setSyncError('Refresh thất bại: dữ liệu hàng đợi chưa đồng bộ. Vui lòng tải lại.');
+            throw new Error('Queue state mismatch');
+          }
+          setParticipation('WAITING');
+          setVerifiedHoldId(null);
+          setSyncError(null);
+        } else if (rawState === 'HELD') {
+          const matchedHold = queueMeRes.data.holdId
+            ? nextHolds.find((h) => h.id === queueMeRes.data!.holdId)
+            : null;
+          if (!matchedHold) {
+            setParticipation('UNKNOWN');
+            setVerifiedHoldId(null);
+            setSyncError('Refresh thất bại: dữ liệu lượt giữ máy chưa đồng bộ. Vui lòng tải lại.');
+            throw new Error('Hold state mismatch');
+          }
+          setParticipation('HELD');
+          setVerifiedHoldId(matchedHold.id);
+          setSyncError(null);
+        } else {
+          // NONE hoặc WASHING
+          setParticipation(rawState);
+          setVerifiedHoldId(null);
+          setSyncError(null);
+        }
+
+        const latestSummary =
+  buildingsRes.ok && Array.isArray(buildingsRes.data)
+    ? buildingsRes.data.find((b) => b.id === summary.id) ?? summary
+    : summary;
+
+if (latestSummary.role === 'MANAGER' && latestSummary.status === 'APPROVED') {
           const [pendingRes, membersRes] = await Promise.all([
             apiJson<PendingMember[]>(`/api/buildings/${summary.id}/members/pending`),
             apiJson<BuildingMember[]>(`/api/buildings/${summary.id}/members`),
           ]);
           if (requestId !== detailRequestId.current) return;
+
+          // Nếu bị quản lý khác hạ quyền đúng lúc gọi API quản lý -> tự hạ vai trò về RESIDENT và ẩn nút quản lý
+          if (pendingRes.status === 403 || membersRes.status === 403) {
+            clearManagerState();
+            setBuildings((prev) =>
+              prev.map((item) => (item.id === summary.id ? { ...item, role: 'RESIDENT' } : item)),
+            );
+            setNotice('Bạn không còn quyền quản lý tại tòa này.');
+            return;
+          }
+
           if (pendingRes.ok && pendingRes.data) {
             setPendingMembers(pendingRes.data);
           } else if (!options?.silent) {
@@ -248,18 +321,27 @@ export default function LaundryApp() {
             setError(membersRes.error ?? 'Không tải được danh sách thành viên.');
           }
         } else {
-          setPendingMembers([]);
-          setApprovedMembers([]);
+          clearManagerState();
         }
       } catch (err) {
-        if (requestId === detailRequestId.current && (!options?.silent || isBuildingSwitch)) {
-          resetBuildingSnapshot();
-          setDetailError('Kết nối bị gián đoạn. Hãy thử tải lại dữ liệu tòa.');
+        if (requestId === detailRequestId.current) {
+          setParticipation('UNKNOWN');
+          setVerifiedHoldId(null);
+          setHolds([]);
+          setHoldsVerified(false);
+          if (!options?.silent && isBuildingSwitch) {
+            resetBuildingSnapshot();
+            setDetailError('Kết nối bị gián đoạn. Hãy thử tải lại dữ liệu tòa.');
+          } else {
+            setSyncError(
+              'Refresh thất bại: kết nối bị gián đoạn, dữ liệu hiện tại có thể đã cũ. Các thao tác đã tạm khóa.',
+            );
+          }
         }
         throw err;
       }
     },
-    [handleSessionExpired, resetBuildingSnapshot],
+    [clearManagerState, handleSessionExpired, resetBuildingSnapshot],
   );
 
   const refreshSelectedBuilding = useCallback(async () => {
@@ -376,7 +458,6 @@ export default function LaundryApp() {
       setAccount(null);
       setBuildings([]);
       setSelectedId(null);
-      setInviteToken(null);
       setNotice('Đã đăng xuất.');
     } finally {
       setBusy(false);
@@ -436,7 +517,7 @@ export default function LaundryApp() {
 
   const handleAddMachine = async (e: FormEvent) => {
     e.preventDefault();
-    if (!selectedSummary) return;
+    if (!selectedSummary || syncError) return;
     setBusy(true);
     setError(null);
     setNotice(null);
@@ -450,14 +531,14 @@ export default function LaundryApp() {
         return;
       }
       setNewMachineLabel('');
-      await loadBuildingDetail(selectedSummary);
+      await loadBuildingDetail(selectedSummary).catch(() => {});
     } finally {
       setBusy(false);
     }
   };
 
   const handleToggleMaintenance = async (machine: MachineView) => {
-    if (!selectedSummary) return;
+    if (!selectedSummary || syncError) return;
     setBusy(true);
     setError(null);
     try {
@@ -470,14 +551,14 @@ export default function LaundryApp() {
         setError(res.error ?? 'Không cập nhật được trạng thái máy.');
         return;
       }
-      await loadBuildingDetail(selectedSummary);
+      await loadBuildingDetail(selectedSummary).catch(() => {});
     } finally {
       setBusy(false);
     }
   };
 
   const handleCreateInvite = async () => {
-    if (!selectedSummary) return;
+    if (!selectedSummary || syncError) return;
     setBusy(true);
     setError(null);
     try {
@@ -495,7 +576,7 @@ export default function LaundryApp() {
   };
 
   const handleApproveMember = async (accountId: string) => {
-    if (!selectedSummary) return;
+    if (!selectedSummary || syncError) return;
     setBusy(true);
     setError(null);
     try {
@@ -506,14 +587,14 @@ export default function LaundryApp() {
         setError(res.error ?? 'Không duyệt được thành viên.');
         return;
       }
-      await loadBuildingDetail(selectedSummary);
+      await loadBuildingDetail(selectedSummary).catch(() => {});
     } finally {
       setBusy(false);
     }
   };
 
   const handleChangeMemberRole = async (accountId: string, role: 'MANAGER' | 'RESIDENT') => {
-    if (!selectedSummary) return;
+    if (!selectedSummary || syncError) return;
     setBusy(true);
     setError(null);
     setNotice(null);
@@ -528,14 +609,17 @@ export default function LaundryApp() {
       }
       setNotice(role === 'MANAGER' ? 'Đã cấp quyền quản lý.' : 'Đã hạ vai trò về cư dân.');
       await loadBuildings();
-      await loadBuildingDetail(selectedSummary);
+      await loadBuildingDetail(selectedSummary).catch(() => {});
     } finally {
       setBusy(false);
     }
   };
 
+  const isSyncStale = Boolean(syncError);
+  const actionsDisabled = busy || isSyncStale;
+
   const myHold =
-    participation === 'HELD' && verifiedHoldId
+    !isSyncStale && participation === 'HELD' && verifiedHoldId
       ? holds.find((item) => item.id === verifiedHoldId && item.accountId === account?.id) ?? null
       : null;
 
@@ -702,6 +786,11 @@ export default function LaundryApp() {
                   <p className="muted-note">
                     Thời gian dự kiến chỉ mang tính tham khảo, không chứng minh máy đã dừng. Luôn kiểm tra thực tế tại máy trước khi sử dụng.
                   </p>
+                  {syncError && (
+                    <div className="alert alert-error" role="alert">
+                      {syncError}
+                    </div>
+                  )}
                 </div>
 
                 <MachineHoldCard
@@ -717,7 +806,7 @@ export default function LaundryApp() {
                   buildingId={selectedSummary.id}
                   accountId={account.id}
                   entries={buildingDetail.queue}
-                  participation={participation}
+                  participation={isSyncStale ? 'UNKNOWN' : participation}
                   onRefresh={refreshSelectedBuilding}
                   onSessionExpired={handleSessionExpired}
                 />
@@ -746,16 +835,16 @@ export default function LaundryApp() {
                               type="button"
                               className="btn btn-outline btn-sm"
                               onClick={() => void handleToggleMaintenance(m)}
-                              disabled={busy}
+                              disabled={actionsDisabled}
                             >
                               {m.status === 'MAINTENANCE' ? 'Mở lại máy' : 'Đánh dấu bảo trì'}
                             </button>
                             <ConfirmMachineFreeButton
                               buildingId={selectedSummary.id}
                               accountId={account.id}
-                              isManager={selectedSummary.role === 'MANAGER'}
+                              isManager={selectedSummary.role === 'MANAGER' && !isSyncStale}
                               machine={m}
-                              hasActiveHold={holdsVerified ? holds.some((h) => h.machineId === m.id) : null}
+                              hasActiveHold={!isSyncStale && holdsVerified ? holds.some((h) => h.machineId === m.id) : null}
                               onRefresh={refreshSelectedBuilding}
                               onSessionExpired={handleSessionExpired}
                             />
@@ -774,8 +863,9 @@ export default function LaundryApp() {
                         value={newMachineLabel}
                         onChange={(e) => setNewMachineLabel(e.target.value)}
                         placeholder="Tên máy mới (vd: Máy tầng 2)"
+                        disabled={actionsDisabled}
                       />
-                      <button type="submit" className="btn btn-outline" disabled={busy}>
+                      <button type="submit" className="btn btn-outline" disabled={actionsDisabled}>
                         Thêm máy
                       </button>
                     </form>
@@ -785,7 +875,7 @@ export default function LaundryApp() {
                 {selectedSummary.role === 'MANAGER' && (
                   <MemberManagementPanel
                     currentAccountId={account.id}
-                    busy={busy}
+                    busy={actionsDisabled}
                     inviteToken={inviteToken}
                     pendingMembers={pendingMembers}
                     approvedMembers={approvedMembers}

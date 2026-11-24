@@ -116,6 +116,7 @@ public class InvitationService {
         }
 
         target.setRole(newRole);
+        memberships.saveAndFlush(target);
     }
     private void requireManager(String username, UUID buildingId) {
         Account user = laundry.account(username);
