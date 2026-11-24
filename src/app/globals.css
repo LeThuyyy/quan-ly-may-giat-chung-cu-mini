@@ -403,3 +403,11 @@ footer {
     scroll-behavior: auto;
   }
 }
+
+/* B - mẻ giặt/bàn giao, sử dụng lại hệ thống màu và nút chung */
+.wash-cycle-entry { padding: 14px 0; border-bottom: 1px solid var(--line); display: grid; gap: 8px; }
+.wash-cycle-entry p { margin: 0; }
+.wash-cycle-entry label { display: flex; align-items: center; gap: 8px; }
+.wash-cycle-entry input[type="checkbox"] { width: auto; }
+.wash-cycle-entry .btn { justify-self: start; }
+.panel select { display: block; width: 100%; min-height: 42px; border: 1px solid var(--line); border-radius: 9px; background: #fff; padding: 8px 12px; }

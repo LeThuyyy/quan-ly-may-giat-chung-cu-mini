@@ -19,7 +19,7 @@ public class QueueEntry {
     // Nullable until old H2 rows are backfilled at startup; new rows always set a state.
     @Enumerated(EnumType.STRING) private State state;
     @Column(nullable = false) private Instant joinedAt;
-    public enum State { WAITING, HELD, WASHING, LEFT }
+    public enum State { WAITING, HELD, WASHING, LEFT, COMPLETED }
 
     protected QueueEntry() {}
     public QueueEntry(Building building, Account account, long position, boolean ready) {
@@ -44,6 +44,7 @@ public class QueueEntry {
     public void hold() { if (state != State.WAITING || !ready) throw new IllegalStateException("Lượt chưa sẵn sàng nhận máy"); state = State.HELD; }
     public void restore() { if (state != State.HELD) throw new IllegalStateException("Không có lượt giữ để khôi phục"); state = State.WAITING; }
     public void start() { if (state != State.HELD) throw new IllegalStateException("Không có lượt giữ để bắt đầu"); state = State.WASHING; }
+    public void complete() { if (state != State.WASHING) throw new IllegalStateException("Yêu cầu không đang giặt"); active = false; state = State.COMPLETED; }
     public void leave() { if (state != State.WAITING) throw new IllegalStateException("Chỉ người đang chờ được rời hàng"); active = false; state = State.LEFT; }
     public void missHold() { if (state != State.HELD) throw new IllegalStateException("Lượt giữ đã kết thúc"); active = false; state = State.LEFT; }
 }

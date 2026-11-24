@@ -6,6 +6,9 @@ import ConfirmMachineFreeButton from '@/components/ConfirmMachineFreeButton';
 import MachineHoldCard, { MachineHoldView } from '@/components/MachineHoldCard';
 import MemberManagementPanel, { BuildingMember, PendingMember } from '@/components/MemberManagementPanel';
 import QueuePanel, { QueueEntryView, QueueParticipation } from '@/components/QueuePanel';
+import WashCycleCard, { WashCycleView } from '@/components/WashCycleCard';
+import WashHoldActions from '@/components/WashHoldActions';
+import WashManagerPanel from '@/components/WashManagerPanel';
 
 interface AccountView {
   id: string;
@@ -90,6 +93,9 @@ export default function LaundryApp() {
   const [buildingDetail, setBuildingDetail] = useState<BuildingView | null>(null);
   const [holds, setHolds] = useState<MachineHoldView[]>([]);
   const [holdsVerified, setHoldsVerified] = useState(false);
+  const [myCycles, setMyCycles] = useState<WashCycleView[] | null>(null);
+  const [issues, setIssues] = useState<WashCycleView[] | null>(null);
+  const [holdHandover, setHoldHandover] = useState<WashCycleView | null | undefined>(undefined);
   const [participation, setParticipation] = useState<QueueParticipation>('UNKNOWN');
   const [verifiedHoldId, setVerifiedHoldId] = useState<string | null>(null);
 
@@ -118,6 +124,9 @@ export default function LaundryApp() {
     setBuildingDetail(null);
     setHolds([]);
     setHoldsVerified(false);
+    setMyCycles(null);
+    setIssues(null);
+    setHoldHandover(undefined);
     setParticipation('UNKNOWN');
     setVerifiedHoldId(null);
     setDetailError(null);
@@ -167,15 +176,17 @@ export default function LaundryApp() {
       }
 
       try {
-        const [detailRes, queueMeRes, holdsRes] = await Promise.all([
+        const [detailRes, queueMeRes, holdsRes, mineRes, issuesRes] = await Promise.all([
           apiJson<BuildingView>(`/api/buildings/${summary.id}`),
           apiJson<QueueMeResponse>(`/api/buildings/${summary.id}/queue/me`),
           apiJson<MachineHoldView[]>(`/api/buildings/${summary.id}/holds`),
+          apiJson<WashCycleView[]>(`/api/buildings/${summary.id}/wash-cycles/me`),
+          summary.role === 'MANAGER' ? apiJson<WashCycleView[]>(`/api/buildings/${summary.id}/wash-cycles/issues`) : Promise.resolve(null),
         ]);
 
         if (requestId !== detailRequestId.current) return;
 
-        if (detailRes.status === 401 || queueMeRes.status === 401 || holdsRes.status === 401) {
+        if (detailRes.status === 401 || queueMeRes.status === 401 || holdsRes.status === 401 || mineRes.status === 401 || issuesRes?.status === 401) {
           handleSessionExpired();
           return;
         }
@@ -196,16 +207,20 @@ export default function LaundryApp() {
         const nextHolds = nextHoldsOk ? holdsRes.data! : [];
         setHolds(nextHolds);
         setHoldsVerified(nextHoldsOk);
+        setMyCycles(mineRes.ok && Array.isArray(mineRes.data) ? mineRes.data : null);
+        setIssues(issuesRes && issuesRes.ok && Array.isArray(issuesRes.data) ? issuesRes.data : (summary.role === 'MANAGER' ? null : []));
 
         // Xác minh trạng thái yêu cầu cá nhân theo hợp đồng api-trang-thai-ca-nhan.md
         if (!queueMeRes.ok || !queueMeRes.data) {
           setParticipation('UNKNOWN');
           setVerifiedHoldId(null);
+          setHoldHandover(undefined);
         } else {
           const rawState = queueMeRes.data.state as QueueParticipation;
           if (!VALID_STATES.has(rawState)) {
             setParticipation('UNKNOWN');
             setVerifiedHoldId(null);
+            setHoldHandover(undefined);
           } else if (rawState === 'WAITING') {
             const matchesQueue = Boolean(
               queueMeRes.data.queueEntryId &&
@@ -213,21 +228,27 @@ export default function LaundryApp() {
             );
             setParticipation(matchesQueue ? 'WAITING' : 'UNKNOWN');
             setVerifiedHoldId(null);
+            setHoldHandover(undefined);
           } else if (rawState === 'HELD') {
             const matchedHold = queueMeRes.data.holdId
               ? nextHolds.find((h) => h.id === queueMeRes.data!.holdId)
               : null;
             if (matchedHold && nextHoldsOk) {
+              const handoverRes = await apiJson<WashCycleView | null>(`/api/buildings/${summary.id}/holds/${matchedHold.id}/handover`);
+              if (requestId !== detailRequestId.current) return;
+              setHoldHandover(handoverRes.ok ? (handoverRes.data ?? null) : undefined);
               setParticipation('HELD');
               setVerifiedHoldId(matchedHold.id);
             } else {
               setParticipation('UNKNOWN');
               setVerifiedHoldId(null);
+              setHoldHandover(undefined);
             }
           } else {
             // NONE hoặc WASHING
             setParticipation(rawState);
             setVerifiedHoldId(null);
+            setHoldHandover(undefined);
           }
         }
 
@@ -534,6 +555,8 @@ export default function LaundryApp() {
     }
   };
 
+  const machineLabels = Object.fromEntries((buildingDetail?.machines ?? []).map(m => [m.id, m.label]));
+
   const myHold =
     participation === 'HELD' && verifiedHoldId
       ? holds.find((item) => item.id === verifiedHoldId && item.accountId === account?.id) ?? null
@@ -713,6 +736,24 @@ export default function LaundryApp() {
                   onSessionExpired={handleSessionExpired}
                 />
 
+                {myHold && <WashHoldActions
+                  key={`${selectedSummary.id}:${account.id}:${myHold.id}`}
+                  buildingId={selectedSummary.id}
+                  hold={myHold}
+                  handover={holdHandover}
+                  onRefresh={refreshSelectedBuilding}
+                  onSessionExpired={handleSessionExpired}
+                />}
+
+                <WashCycleCard
+                  key={`${selectedSummary.id}:${account.id}`}
+                  buildingId={selectedSummary.id}
+                  cycles={myCycles}
+                  machineLabels={machineLabels}
+                  onRefresh={refreshSelectedBuilding}
+                  onSessionExpired={handleSessionExpired}
+                />
+
                 <QueuePanel
                   buildingId={selectedSummary.id}
                   accountId={account.id}
@@ -781,6 +822,15 @@ export default function LaundryApp() {
                     </form>
                   )}
                 </div>
+
+                {selectedSummary.role === 'MANAGER' && <WashManagerPanel
+                  key={`manager:${selectedSummary.id}:${account.id}`}
+                  buildingId={selectedSummary.id}
+                  issues={issues}
+                  machineLabels={machineLabels}
+                  onRefresh={refreshSelectedBuilding}
+                  onSessionExpired={handleSessionExpired}
+                />}
 
                 {selectedSummary.role === 'MANAGER' && (
                   <MemberManagementPanel

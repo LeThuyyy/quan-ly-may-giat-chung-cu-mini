@@ -45,5 +45,20 @@ public class Machine {
         status = Status.RUNNING;
         verifiedFree = false;
     }
+    // Only called after an authorized user has physically confirmed the drum is empty.
+    public void finishAndVerifyFree() {
+        if (status == Status.MAINTENANCE) throw new IllegalStateException("Máy đang bảo trì");
+        status = Status.AVAILABLE;
+        verifiedFree = true;
+    }
+    public void managerClearMaintenance() {
+        if (status != Status.MAINTENANCE) throw new IllegalStateException("Máy không bảo trì");
+        status = Status.NEEDS_CHECK; verifiedFree = false;
+    }
+    public void managerContinueRunning() {
+        if (status != Status.NEEDS_CHECK) throw new IllegalStateException("Máy không ở trạng thái chờ xác minh");
+        status = Status.RUNNING; verifiedFree = false;
+    }
+    public void managerStopForMaintenance() { status = Status.MAINTENANCE; verifiedFree = false; }
     public void flagUnusable() { status = Status.NEEDS_CHECK; verifiedFree = false; }
 }

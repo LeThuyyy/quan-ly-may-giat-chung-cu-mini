@@ -17,12 +17,13 @@ public class LaundryService {
     private final QueueEntryRepository queue;
     private final MachineHoldRepository holds;
     private final AllocationService allocation;
+    private final WashCycleRepository cycles;
 
     public LaundryService(AccountRepository accounts, BuildingRepository buildings, MembershipRepository memberships,
                           MachineRepository machines, QueueEntryRepository queue, MachineHoldRepository holds,
-                          AllocationService allocation) {
+                          AllocationService allocation, WashCycleRepository cycles) {
         this.accounts = accounts; this.buildings = buildings; this.memberships = memberships;
-        this.machines = machines; this.queue = queue; this.holds = holds; this.allocation = allocation;
+        this.machines = machines; this.queue = queue; this.holds = holds; this.allocation = allocation; this.cycles = cycles;
     }
 
     @Transactional
@@ -56,6 +57,8 @@ public class LaundryService {
         requireMember(username, buildingId, true);
         Machine machine = machines.findByIdAndBuilding_Id(machineId, buildingId)
             .orElseThrow(() -> missing("Không tìm thấy máy trong tòa"));
+        if (cycles.findByMachine_IdAndCompletedAtIsNull(machineId).isPresent())
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Mẻ cũ chưa hoàn tất; hãy dùng xử lý bàn giao/sự cố");
         if (machine.getStatus() == Machine.Status.RUNNING)
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Máy đang chạy; cần hoàn tất hoặc xử lý mẻ giặt trước");
         if (!holds.findByMachine_IdAndStatus(machineId, MachineHold.Status.ACTIVE).isEmpty())
@@ -70,6 +73,8 @@ public class LaundryService {
         requireMember(username, buildingId, true);
         Machine machine = machines.findByIdAndBuilding_Id(machineId, buildingId)
             .orElseThrow(() -> missing("Không tìm thấy máy trong tòa"));
+        if (cycles.findByMachine_IdAndCompletedAtIsNull(machineId).isPresent())
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Chưa hoàn tất bàn giao mẻ cũ");
         if (!holds.findByMachine_IdAndStatus(machineId, MachineHold.Status.ACTIVE).isEmpty())
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Máy đang được giữ lượt");
         if (machine.getStatus() == Machine.Status.RUNNING || machine.getStatus() == Machine.Status.MAINTENANCE)

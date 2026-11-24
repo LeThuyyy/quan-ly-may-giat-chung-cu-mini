@@ -62,8 +62,12 @@ class AllocationApiTest {
         UUID holdId = allocation.activeHolds(owner.getUsername(), building.getId()).getFirst().id();
         String holdPath = "/api/buildings/" + building.getId() + "/holds/" + holdId;
         for (String action : new String[] { "yield", "confirm-check", "unusable", "start" }) {
-            mvc.perform(post(holdPath + "/" + action).with(user(resident.getUsername())))
-                .andExpect(status().isForbidden());
+            var request = post(holdPath + "/" + action).with(user(resident.getUsername()));
+            if (action.equals("start")) {
+                request.contentType("application/json")
+                    .content("{\"durationMinutes\":30,\"handoverMode\":\"ALLOW_TRANSFER\"}");
+            }
+            mvc.perform(request).andExpect(status().isForbidden());
         }
     }
 
@@ -78,8 +82,12 @@ class AllocationApiTest {
         var hold = allocation.activeHolds(owner.getUsername(), building.getId()).getFirst();
         String path = "/api/buildings/" + building.getId() + "/holds/" + hold.id();
         for (String action : new String[] { "yield", "confirm-check", "unusable", "start" }) {
-            mvc.perform(post(path + "/" + action).with(user(b.getUsername())).with(csrf()))
-                .andExpect(status().isForbidden());
+            var request = post(path + "/" + action).with(user(b.getUsername())).with(csrf());
+            if (action.equals("start")) {
+                request.contentType("application/json")
+                    .content("{\"durationMinutes\":30,\"handoverMode\":\"ALLOW_TRANSFER\"}");
+            }
+            mvc.perform(request).andExpect(status().isForbidden());
         }
         mvc.perform(post(path + "/confirm-check").with(user(a.getUsername())).with(csrf())).andExpect(status().isOk());
         mvc.perform(post(path + "/yield").with(user(a.getUsername())).with(csrf())).andExpect(status().isOk());
