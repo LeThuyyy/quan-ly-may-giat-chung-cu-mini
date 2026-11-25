@@ -8,6 +8,7 @@ export interface MachineHoldView {
   accountId: string;
   queueEntryId: string;
   expiresAt: string;
+  physicallyChecked?: boolean;
 }
 
 export interface MachineHoldCardProps {
@@ -48,6 +49,7 @@ function ActiveHoldCard({
   const invalidDeadline = !Number.isFinite(deadline);
   const expired = invalidDeadline || (now !== null && now >= deadline);
   const disabled = now === null || expired || yielded || needsRefresh || sessionExpired || busy !== null;
+  const verified = checked || hold.physicallyChecked === true;
 
   useEffect(() => {
     callbacks.current = { onRefresh, onSessionExpired };
@@ -150,8 +152,8 @@ function ActiveHoldCard({
       {notice && <p role="status">{notice}</p>}
       {error && <p className="alert alert-error" role="alert">{error}</p>}
       <div>
-        <button type="button" className="btn btn-primary" disabled={disabled || checked} onClick={() => void act('confirm-check')}>
-          {busy === 'confirm-check' ? 'Đang xác nhận…' : checked ? 'Đã ghi nhận kiểm tra' : 'Tôi đã kiểm tra máy tại chỗ'}
+        <button type="button" className="btn btn-primary" disabled={disabled || verified} onClick={() => void act('confirm-check')}>
+          {busy === 'confirm-check' ? 'Đang xác nhận…' : verified ? 'Đã ghi nhận kiểm tra' : 'Tôi đã kiểm tra máy tại chỗ'}
         </button>{' '}
         <button type="button" className="btn btn-danger" disabled={disabled} onClick={() => void act('yield')}>
           {busy === 'yield' ? 'Đang nhường…' : 'Nhường lượt'}

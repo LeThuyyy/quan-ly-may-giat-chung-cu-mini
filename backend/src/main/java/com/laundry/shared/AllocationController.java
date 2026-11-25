@@ -1,6 +1,8 @@
 package com.laundry.shared;
 
 import org.springframework.security.core.Authentication;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.*;
 import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.UUID;
@@ -10,8 +12,9 @@ import java.util.UUID;
 public class AllocationController {
     private final AllocationService allocation;
     private final LaundryService laundry;
-    public AllocationController(AllocationService allocation, LaundryService laundry) {
-        this.allocation = allocation; this.laundry = laundry;
+    private final WashService wash;
+    public AllocationController(AllocationService allocation, LaundryService laundry, WashService wash) {
+        this.allocation = allocation; this.laundry = laundry; this.wash = wash;
     }
 
     @GetMapping("/holds")
@@ -30,9 +33,13 @@ public class AllocationController {
     public void confirmCheck(Authentication auth, @PathVariable UUID buildingId, @PathVariable UUID holdId) {
         allocation.confirmPhysicalCheck(auth.getName(), buildingId, holdId);
     }
+    public record StartRequest(@Min(1) @Max(360) int durationMinutes,
+                               @NotNull WashCycle.HandoverMode handoverMode) {}
     @PostMapping("/holds/{holdId}/start")
-    public void start(Authentication auth, @PathVariable UUID buildingId, @PathVariable UUID holdId) {
-        allocation.start(auth.getName(), buildingId, holdId);
+    public WashService.CycleView start(Authentication auth, @PathVariable UUID buildingId, @PathVariable UUID holdId,
+                                       @Valid @RequestBody StartRequest body) {
+        WashCycle cycle = allocation.start(auth.getName(), buildingId, holdId, body.durationMinutes(), body.handoverMode());
+        return wash.startedView(auth.getName(), buildingId, cycle.getId());
     }
     @PostMapping("/machines/{machineId}/confirm-free")
     public void confirmFree(Authentication auth, @PathVariable UUID buildingId, @PathVariable UUID machineId) {
