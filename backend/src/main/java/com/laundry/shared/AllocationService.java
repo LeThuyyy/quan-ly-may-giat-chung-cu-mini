@@ -24,12 +24,17 @@ public class AllocationService {
     private final MachineHoldRepository holds;
     private final Clock clock;
     private final WashCycleRepository cycles;
+    private final BuildingAccessService access;
+    private final ActivityService activity;
+    private final SwapLifecycle swaps;
 
     public AllocationService(BuildingRepository buildings, MembershipRepository memberships,
                              AccountRepository accounts, QueueEntryRepository queue,
-                             MachineRepository machines, MachineHoldRepository holds, Clock clock, WashCycleRepository cycles) {
+                             MachineRepository machines, MachineHoldRepository holds, Clock clock, WashCycleRepository cycles,
+                             BuildingAccessService access, ActivityService activity, SwapLifecycle swaps) {
         this.buildings = buildings; this.memberships = memberships; this.accounts = accounts;
         this.queue = queue; this.machines = machines; this.holds = holds; this.clock = clock; this.cycles = cycles;
+        this.access=access; this.activity=activity; this.swaps=swaps;
     }
 
     // All decisions for one building are serialized by its database row lock.
@@ -47,6 +52,7 @@ public class AllocationService {
             if (!now.isBefore(hold.getExpiresAt())) {
                 hold.finish(MachineHold.Status.EXPIRED);
                 queue.findById(hold.getQueueEntryId()).orElseThrow().missHold();
+                activity.record(buildingId,null,"HOLD_EXPIRED",hold.getId(),hold.getMachineId(),"ACTIVE","EXPIRED");
             } else occupied.add(hold.getMachineId());
         }
         // Flush closed holds before querying or inserting replacement holds in the same transaction.
@@ -64,8 +70,10 @@ public class AllocationService {
                 && old.inspectionEligible(now);
             if ((!empty && !inspection) || occupied.contains(machine.getId()) || index >= eligible.size()) continue;
             QueueEntry entry = eligible.get(index++);
+            swaps.invalidateEntry(buildingId,entry.getId());
             entry.hold(); // Retains the rank token while hidden from the waiting list.
             MachineHold hold = holds.save(new MachineHold(machine, entry, now, now.plus(HOLD_TIME)));
+            activity.record(buildingId,null,"HOLD_ASSIGNED",hold.getId(),machine.getId(),"WAITING","HELD");
             created.add(view(hold));
         }
         return created;
@@ -75,6 +83,7 @@ public class AllocationService {
     public void yield(String username, UUID buildingId, UUID holdId) {
         MachineHold hold = activeHold(username, buildingId, holdId);
         hold.finish(MachineHold.Status.YIELDED);
+        activity.record(buildingId,hold.getAccountId(),"HOLD_YIELDED",holdId,hold.getMachineId(),"ACTIVE","YIELDED");
         queue.findById(hold.getQueueEntryId()).orElseThrow().missHold();
         holds.flush();
         dispatchLocked(buildingId);
@@ -90,6 +99,7 @@ public class AllocationService {
     public void reportUnusable(String username, UUID buildingId, UUID holdId) {
         MachineHold hold = activeHold(username, buildingId, holdId);
         hold.finish(MachineHold.Status.UNUSABLE);
+        activity.record(buildingId,hold.getAccountId(),"HOLD_UNUSABLE",holdId,hold.getMachineId(),"HELD","WAITING");
         queue.findById(hold.getQueueEntryId()).orElseThrow().restore();
         Machine machine = machines.findById(hold.getMachineId()).orElseThrow();
         cycles.findByMachine_IdAndCompletedAtIsNull(machine.getId()).ifPresent(WashCycle::markNeedsManager);
@@ -105,7 +115,10 @@ public class AllocationService {
         if (cycles.findByMachine_IdAndCompletedAtIsNull(machine.getId()).isPresent()
             || machine.getStatus() != Machine.Status.AVAILABLE || !machine.isVerifiedFree())
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Mẻ cũ chưa bàn giao hoặc máy chưa được xác nhận trống");
-        hold.confirmPhysicalCheck();
+        if (!hold.isPhysicallyChecked()) {
+            hold.confirmPhysicalCheck();
+            activity.record(buildingId,hold.getAccountId(),"HOLD_CHECKED",holdId,hold.getMachineId(),"UNCHECKED","CHECKED");
+        }
     }
 
     // Legacy Java callers retain their old signature; the HTTP API requires explicit form data.
@@ -121,8 +134,8 @@ public class AllocationService {
     public WashCycle start(String username, UUID buildingId, UUID holdId, int minutes, WashCycle.HandoverMode mode) {
         if (minutes < 1 || minutes > 360 || mode == null)
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Phút giặt phải từ 1 đến 360 và chọn chế độ bàn giao");
-        Account owner = member(username, buildingId);
         buildings.findLockedById(buildingId).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+        Account owner = member(username, buildingId);
         MachineHold hold = holds.findByIdAndMachine_Building_Id(holdId, buildingId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
         if (!hold.getAccountId().equals(owner.getId())) throw new ResponseStatusException(HttpStatus.FORBIDDEN);
@@ -143,7 +156,9 @@ public class AllocationService {
         hold.finish(MachineHold.Status.STARTED);
         entry.start();
         machine.markRunning();
-        return cycles.saveAndFlush(new WashCycle(machine, entry, hold, clock.instant(), minutes, mode));
+        WashCycle cycle=cycles.saveAndFlush(new WashCycle(machine, entry, hold, clock.instant(), minutes, mode));
+        activity.record(buildingId,owner.getId(),"WASH_STARTED",cycle.getId(),machine.getId(),"HELD","WASHING");
+        return cycle;
     }
 
     @Transactional(readOnly = true)
@@ -155,8 +170,8 @@ public class AllocationService {
     }
 
     private MachineHold activeHold(String username, UUID buildingId, UUID holdId) {
-        Account user = member(username, buildingId);
         buildings.findLockedById(buildingId).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+        Account user = member(username, buildingId);
         MachineHold hold = holds.findByIdAndMachine_Building_Id(holdId, buildingId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
         if (!hold.getAccountId().equals(user.getId())) throw new ResponseStatusException(HttpStatus.FORBIDDEN);
@@ -165,11 +180,7 @@ public class AllocationService {
         return hold;
     }
     private Account member(String username, UUID buildingId) {
-        Account user = accounts.findByUsername(username).orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED));
-        Membership membership = memberships.findByBuilding_IdAndAccount_Id(buildingId, user.getId())
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN));
-        if (membership.getStatus() != Membership.Status.APPROVED) throw new ResponseStatusException(HttpStatus.FORBIDDEN);
-        return user;
+        return access.require(username,buildingId,false);
     }
     private HoldView view(MachineHold hold) {
         return new HoldView(hold.getId(), hold.getMachineId(), hold.getAccountId(), hold.getQueueEntryId(), hold.getExpiresAt(), hold.isPhysicallyChecked());

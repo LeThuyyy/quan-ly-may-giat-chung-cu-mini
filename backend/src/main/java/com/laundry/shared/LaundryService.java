@@ -18,12 +18,17 @@ public class LaundryService {
     private final MachineHoldRepository holds;
     private final AllocationService allocation;
     private final WashCycleRepository cycles;
+    private final BuildingAccessService access;
+    private final ActivityService activity;
+    private final SwapLifecycle swaps;
 
     public LaundryService(AccountRepository accounts, BuildingRepository buildings, MembershipRepository memberships,
                           MachineRepository machines, QueueEntryRepository queue, MachineHoldRepository holds,
-                          AllocationService allocation, WashCycleRepository cycles) {
+                          AllocationService allocation, WashCycleRepository cycles,
+                          BuildingAccessService access, ActivityService activity, SwapLifecycle swaps) {
         this.accounts = accounts; this.buildings = buildings; this.memberships = memberships;
         this.machines = machines; this.queue = queue; this.holds = holds; this.allocation = allocation; this.cycles = cycles;
+        this.access=access;this.activity=activity;this.swaps=swaps;
     }
 
     @Transactional
@@ -34,6 +39,7 @@ public class LaundryService {
         Building building = buildings.save(new Building(name.trim(), manager));
         memberships.save(new Membership(building, manager, Membership.Role.MANAGER, Membership.Status.APPROVED));
         for (int number = 1; number <= machineCount; number++) machines.save(new Machine(building, "Máy " + number, number));
+        activity.record(building.getId(),manager.getId(),"BUILDING_CREATED",building.getId(),null,null,"CREATED");
         return building;
     }
 
@@ -47,6 +53,7 @@ public class LaundryService {
         if (cleaned.isBlank() || cleaned.length() > 60 || machines.existsByBuilding_IdAndLabel(buildingId, cleaned))
             throw bad("Tên máy không hợp lệ hoặc đã tồn tại");
         Machine machine = machines.save(new Machine(building, cleaned, Math.toIntExact(machines.countByBuilding_Id(buildingId) + 1)));
+        activity.record(buildingId,account(username).getId(),"MACHINE_ADDED",machine.getId(),machine.getId(),null,"AVAILABLE");
         allocation.dispatchLocked(buildingId);
         return machine;
     }
@@ -63,7 +70,11 @@ public class LaundryService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Máy đang chạy; cần hoàn tất hoặc xử lý mẻ giặt trước");
         if (!holds.findByMachine_IdAndStatus(machineId, MachineHold.Status.ACTIVE).isEmpty())
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Máy đang giữ lượt; cần xử lý lượt trước khi bảo trì");
+        String previous=machine.getStatus().name();
+        boolean verified=machine.isVerifiedFree();
         machine.setMaintenance(maintenance);
+        if(!previous.equals(machine.getStatus().name()) || verified)
+            activity.record(buildingId,account(username).getId(),"MACHINE_MAINTENANCE_CHANGED",machineId,machineId,previous,machine.getStatus().name());
         if (!maintenance) allocation.dispatchLocked(buildingId);
     }
 
@@ -79,7 +90,9 @@ public class LaundryService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Máy đang được giữ lượt");
         if (machine.getStatus() == Machine.Status.RUNNING || machine.getStatus() == Machine.Status.MAINTENANCE)
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Máy đang chạy hoặc bảo trì; không thể xác nhận trống");
+        boolean alreadyVerified=machine.isVerifiedFree();
         machine.confirmFree();
+        if(!alreadyVerified) activity.record(buildingId,account(username).getId(),"MACHINE_VERIFIED_FREE",machineId,machineId,"UNVERIFIED","VERIFIED");
         allocation.dispatchLocked(buildingId);
     }
 
@@ -90,6 +103,7 @@ public class LaundryService {
         if (queue.existsByBuilding_IdAndAccount_IdAndActiveTrue(buildingId, user.getId())) throw bad("Bạn đã ở trong hàng");
         // Historical rows retain positions. A new visit always joins at the end.
         QueueEntry entry = queue.save(new QueueEntry(building, user, queue.maxPositionByBuildingId(buildingId) + 1, ready));
+        activity.record(buildingId,user.getId(),"QUEUE_JOINED",entry.getId(),null,null,ready ? "WAITING_READY" : "WAITING_UNREADY");
         if (ready) allocation.dispatchLocked(buildingId);
         return entry;
     }
@@ -100,7 +114,10 @@ public class LaundryService {
         Account user = requireMember(username, buildingId, false);
         QueueEntry entry = queue.findByBuilding_IdAndAccount_IdAndState(buildingId, user.getId(), QueueEntry.State.WAITING)
             .orElseThrow(() -> bad("Bạn chưa ở trong hàng"));
+        boolean previous=entry.isReady();
         entry.setReady(ready);
+        if(previous!=ready) activity.record(buildingId,user.getId(),"QUEUE_READINESS_CHANGED",entry.getId(),null,
+            previous ? "READY" : "UNREADY",ready ? "READY" : "UNREADY");
         if (ready) allocation.dispatchLocked(buildingId);
     }
 
@@ -110,7 +127,9 @@ public class LaundryService {
         Account user = requireMember(username, buildingId, false);
         QueueEntry entry = queue.findByBuilding_IdAndAccount_IdAndState(buildingId, user.getId(), QueueEntry.State.WAITING)
             .orElseThrow(() -> bad("Bạn chưa ở trong hàng"));
+        swaps.invalidateEntry(buildingId,entry.getId());
         entry.leave();
+        activity.record(buildingId,user.getId(),"QUEUE_LEFT",entry.getId(),null,"WAITING","LEFT");
     }
 
     @Transactional(readOnly = true)
@@ -127,6 +146,7 @@ public class LaundryService {
     @Transactional(readOnly = true)
     public List<BuildingSummary> myBuildings(String username) {
         return memberships.findWithBuildingByAccountId(account(username).getId()).stream()
+            .filter(m -> m.getStatus()!=Membership.Status.REMOVED)
             .map(m -> new BuildingSummary(m.getBuildingId(), m.getBuildingName(), m.getRole(), m.getStatus()))
             .toList();
     }
@@ -138,12 +158,7 @@ public class LaundryService {
         return buildings.findLockedById(id).orElseThrow(() -> missing("Không tìm thấy tòa"));
     }
     private Account requireMember(String username, UUID id, boolean manager) {
-        Account account = account(username);
-        Membership member = memberships.findByBuilding_IdAndAccount_Id(id, account.getId())
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN));
-        if (member.getStatus() != Membership.Status.APPROVED || (manager && member.getRole() != Membership.Role.MANAGER))
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN);
-        return account;
+        return access.require(username,id,manager);
     }
     private ResponseStatusException bad(String message) { return new ResponseStatusException(HttpStatus.BAD_REQUEST, message); }
     private ResponseStatusException missing(String message) { return new ResponseStatusException(HttpStatus.NOT_FOUND, message); }

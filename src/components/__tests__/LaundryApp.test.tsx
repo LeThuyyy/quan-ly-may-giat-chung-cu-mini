@@ -3,6 +3,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import LaundryApp from '../LaundryApp';
+import { snapshotFixture } from './snapshot-fixture';
 
 const fetchMock = vi.fn<typeof fetch>();
 
@@ -30,6 +31,7 @@ describe('LaundryApp integration', () => {
 
         fetchMock.mockImplementation(async (input) => {
             const url = String(input);
+            if (url === '/api/buildings/b-1/snapshot') return snapshotFixture(fetchMock, 'b-1');
             if (url === '/api/me') {
                 return jsonResponse({ id: 'mgr-1', username: 'manager1', displayName: 'Quản lý 1' });
             }
@@ -109,6 +111,7 @@ describe('LaundryApp integration', () => {
 
         fetchMock.mockImplementation(async (input) => {
             const url = String(input);
+            if (url === '/api/buildings/b-1/snapshot') return snapshotFixture(fetchMock, 'b-1');
             if (url === '/api/me') {
                 return jsonResponse({ id: 'mgr-1', username: 'manager1', displayName: 'Quản lý 1' });
             }
@@ -183,6 +186,7 @@ describe('LaundryApp integration', () => {
 
         fetchMock.mockImplementation(async (input) => {
             const url = String(input);
+            if (url === '/api/buildings/b-1/snapshot') return snapshotFixture(fetchMock, 'b-1');
             if (url === '/api/me') {
                 return jsonResponse({ id: 'mgr-2', username: 'manager2', displayName: 'Quản lý 2' });
             }

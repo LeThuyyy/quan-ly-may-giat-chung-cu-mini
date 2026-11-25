@@ -68,13 +68,13 @@ The backend is Spring Boot 3.5.7 with MVC, Validation, Spring Security, Spring D
 
 The connected UI supports registration/login/logout, building creation/list/detail, 1–30 machines, adding machines and maintenance changes, invitations and member approval, and joining/leaving the queue or toggling readiness.
 
-Java additionally contains allocation APIs and service logic that the Next.js routes/UI do not yet expose:
+Allocation and wash/handover actions are connected to the UI. The expansion branch also contains drafts of swaps, ETA, authenticated machine pages/QR, resident removal/restoration, invite revocation, retained moderated text chat and manager audit. See `docs/mo-rong-nghiep-vu.md` for exact implemented contracts and verification limits; not all planned hardening or browser acceptance is complete.
 
 - Assignment requires `AVAILABLE` **and** manager-confirmed `verifiedFree`; a newly created or reopened machine is not automatically verified empty. Ready queue operations can trigger dispatch once machines satisfy this gate.
 - Queue states include `WAITING`, `HELD`, `WASHING`, and `LEFT`. Holding hides a request from the waiting list but retains its order key. Unready requests retain their place and are skipped.
 - Holds expire after eight minutes; `now >= expiresAt` is expired. Yield/expiry ends the request; a valid unusable-machine report restores its original queue key and marks the machine `NEEDS_CHECK`/unverified. Starting requires prior physical-check confirmation.
 
-This is not a complete operational washing lifecycle: duration entry, completed-wash handover, predicted-finish allocation, ETA, turn swapping, and chat are not implemented. Do not infer physical availability from `AVAILABLE` or a countdown reaching zero. The application is for local trials, not Internet deployment or real-laundry operation of the unfinished allocation flow.
+WashCycle/WashService implement duration entry, pickup/transfer, inspection holds after estimated finish (or the ten-minute self-pickup window), one overrun adjustment and manager resolution. Do not infer physical availability from `AVAILABLE` or a countdown reaching zero. BuildingAccessService is repository-only authorization; mutable building state is checked under the building lock. ActivityService.record requires an existing transaction so rollback also removes its event. REMOVED membership cannot rejoin through a token; restore gives PENDING and needs separate approval. This application remains a local coursework prototype, not Internet deployment or verified real-laundry operation.
 
 ## Tests
 

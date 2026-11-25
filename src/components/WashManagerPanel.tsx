@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useScopedActions } from '@/lib/use-scoped-actions';
 import type { WashCycleView } from './WashCycleCard';
 
 export default function WashManagerPanel({ buildingId, issues, machineLabels, onRefresh, onSessionExpired }: {
@@ -10,6 +11,7 @@ export default function WashManagerPanel({ buildingId, issues, machineLabels, on
   onRefresh: () => Promise<void>;
   onSessionExpired: () => void;
 }) {
+  const { scopedFetch, refresh, sessionExpired } = useScopedActions(onRefresh, onSessionExpired);
   const [minutes, setMinutes] = useState(10);
   const [confirmedId, setConfirmedId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -19,17 +21,17 @@ export default function WashManagerPanel({ buildingId, issues, machineLabels, on
     if (busy || uncertain || (action === 'CLEARED' && confirmedId !== cycleId)) return;
     setBusy(true); setError(null);
     try {
-      const res = await fetch(`/api/buildings/${buildingId}/wash-cycles/${cycleId}/resolve`, {
+      const res = await scopedFetch(`/api/buildings/${buildingId}/wash-cycles/${cycleId}/resolve`, {
         method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action, remainingMinutes: action === 'DEFER' ? minutes : null, physicallyConfirmed: confirmedId === cycleId }),
       });
-      if (res.status === 401) { onSessionExpired(); return; }
+      if (res.status === 401) { sessionExpired(); return; }
       if (!res.ok) {
         const body = await res.json().catch(() => null) as { error?: string } | null;
         setError(body?.error ?? 'Không xử lý được sự cố.'); setUncertain(true); return;
       }
       setConfirmedId(null);
-      try { await onRefresh(); } catch { setUncertain(true); setError('Đã xử lý nhưng chưa thể tải lại dữ liệu.'); }
+      try { await refresh(); } catch { setUncertain(true); setError('Đã xử lý nhưng chưa thể tải lại dữ liệu.'); }
     } catch { setUncertain(true); setError('Mất kết nối. Không gửi lặp, hãy tải lại.'); }
     finally { setBusy(false); }
   }
@@ -54,6 +56,6 @@ export default function WashManagerPanel({ buildingId, issues, machineLabels, on
         onClick={() => void resolve(c.id, 'MAINTENANCE')}>Đánh dấu bảo trì</button>
     </div>)}
     {error && <p role="alert" className="alert alert-error">{error}</p>}
-    {uncertain && <button type="button" className="btn btn-outline" onClick={() => void onRefresh().then(() => { setUncertain(false); setError(null); })}>Tải lại trước khi tiếp tục</button>}
+    {uncertain && <button type="button" className="btn btn-outline" onClick={() => void refresh().then(() => { setUncertain(false); setError(null); })}>Tải lại trước khi tiếp tục</button>}
   </section>;
 }

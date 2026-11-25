@@ -1,6 +1,7 @@
 'use client';
 
 import { FormEvent, useEffect, useState } from 'react';
+import { useScopedActions } from '@/lib/use-scoped-actions';
 import type { MachineHoldView } from './MachineHoldCard';
 import type { HandoverMode, WashCycleView } from './WashCycleCard';
 
@@ -12,6 +13,7 @@ export default function WashHoldActions({ buildingId, hold, handover, onRefresh,
   onRefresh: () => Promise<void>;
   onSessionExpired: () => void;
 }) {
+  const { scopedFetch, refresh, sessionExpired } = useScopedActions(onRefresh, onSessionExpired);
   const [minutes, setMinutes] = useState(45);
   const [mode, setMode] = useState<HandoverMode>('ALLOW_TRANSFER');
   const [remaining, setRemaining] = useState('');
@@ -36,11 +38,11 @@ export default function WashHoldActions({ buildingId, hold, handover, onRefresh,
     if (busy || uncertain || expired || Date.now() >= deadline) return;
     setBusy(true); setError(null); setNotice(null);
     try {
-      const response = await fetch(`/api/buildings/${buildingId}/${path}`, {
+      const response = await scopedFetch(`/api/buildings/${buildingId}/${path}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, cache: 'no-store',
         body: JSON.stringify(payload),
       });
-      if (response.status === 401) { onSessionExpired(); return; }
+      if (response.status === 401) { sessionExpired(); return; }
       if (!response.ok) {
         const message = await response.json().catch(() => null) as { error?: string } | null;
         setError(message?.error ?? 'Máy chủ không chấp nhận thao tác.');
@@ -48,7 +50,7 @@ export default function WashHoldActions({ buildingId, hold, handover, onRefresh,
         return;
       }
       setPhysical(false); setNotice(success);
-      try { await onRefresh(); } catch { setError('Thao tác đã được ghi nhận nhưng chưa tải lại được.'); setUncertain(true); }
+      try { await refresh(); } catch { setError('Thao tác đã được ghi nhận nhưng chưa tải lại được.'); setUncertain(true); }
     } catch { setUncertain(true); setError('Mất kết nối, chưa rõ thao tác đã ghi nhận chưa. Hãy tải lại, không gửi lặp.'); }
     finally { setBusy(false); }
   }
@@ -104,7 +106,7 @@ export default function WashHoldActions({ buildingId, hold, handover, onRefresh,
     {notice && <p role="status">{notice}</p>}
     {error && <p role="alert" className="alert alert-error">{error}</p>}
     {uncertain && <button type="button" className="btn btn-outline" disabled={busy}
-      onClick={() => void onRefresh().then(() => { setUncertain(false); setError(null); }).catch(() => setError('Tải lại thất bại.'))}>
+      onClick={() => void refresh().then(() => { setUncertain(false); setError(null); }).catch(() => setError('Tải lại thất bại.'))}>
       Tải lại trạng thái trước khi thao tác
     </button>}
   </section>;

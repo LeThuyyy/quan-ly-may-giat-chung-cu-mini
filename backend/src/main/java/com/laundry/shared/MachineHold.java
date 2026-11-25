@@ -10,7 +10,7 @@ import java.util.UUID;
     @Index(name = "idx_hold_entry", columnList = "queue_entry_id,status")
 })
 public class MachineHold {
-    public enum Status { ACTIVE, STARTED, YIELDED, EXPIRED, UNUSABLE }
+    public enum Status { ACTIVE, STARTED, YIELDED, EXPIRED, UNUSABLE, MEMBER_REMOVED }
     @Id private UUID id;
     @ManyToOne(optional = false, fetch = FetchType.LAZY) private Machine machine;
     @ManyToOne(optional = false, fetch = FetchType.LAZY) private QueueEntry queueEntry;
