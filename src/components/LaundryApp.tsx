@@ -6,6 +6,9 @@ import ConfirmMachineFreeButton from '@/components/ConfirmMachineFreeButton';
 import MachineHoldCard, { MachineHoldView } from '@/components/MachineHoldCard';
 import MemberManagementPanel, { BuildingMember, PendingMember } from '@/components/MemberManagementPanel';
 import QueuePanel, { QueueEntryView, QueueParticipation } from '@/components/QueuePanel';
+import WashCycleCard, { WashCycleView } from '@/components/WashCycleCard';
+import WashHoldActions from '@/components/WashHoldActions';
+import WashManagerPanel from '@/components/WashManagerPanel';
 
 interface AccountView {
   id: string;
@@ -90,6 +93,9 @@ export default function LaundryApp() {
   const [buildingDetail, setBuildingDetail] = useState<BuildingView | null>(null);
   const [holds, setHolds] = useState<MachineHoldView[]>([]);
   const [holdsVerified, setHoldsVerified] = useState(false);
+  const [myCycles, setMyCycles] = useState<WashCycleView[] | null>(null);
+  const [issues, setIssues] = useState<WashCycleView[] | null>(null);
+  const [holdHandover, setHoldHandover] = useState<WashCycleView | null | undefined>(undefined);
   const [participation, setParticipation] = useState<QueueParticipation>('UNKNOWN');
   const [verifiedHoldId, setVerifiedHoldId] = useState<string | null>(null);
 
@@ -125,6 +131,9 @@ export default function LaundryApp() {
     setBuildingDetail(null);
     setHolds([]);
     setHoldsVerified(false);
+    setMyCycles(null);
+    setIssues(null);
+    setHoldHandover(undefined);
     setParticipation('UNKNOWN');
     setVerifiedHoldId(null);
     setDetailError(null);
@@ -170,29 +179,29 @@ export default function LaundryApp() {
         resetBuildingSnapshot();
       } else if (!options?.silent) {
         setDetailError(null);
-        setSyncError(null);
+        // Keep stale-state guards until the required server reads succeed.
       }
 
       try {
-        const [buildingsRes, detailRes, queueMeRes, holdsRes] = await Promise.all([
+        const [buildingsRes, detailRes, queueMeRes, holdsRes, mineRes] = await Promise.all([
           apiJson<BuildingSummary[]>('/api/buildings'),
           apiJson<BuildingView>(`/api/buildings/${summary.id}`),
           apiJson<QueueMeResponse>(`/api/buildings/${summary.id}/queue/me`),
           apiJson<MachineHoldView[]>(`/api/buildings/${summary.id}/holds`),
+          apiJson<WashCycleView[]>(`/api/buildings/${summary.id}/wash-cycles/me`),
         ]);
 
         if (requestId !== detailRequestId.current) return;
 
-        if (
-          buildingsRes.status === 401 ||
-          detailRes.status === 401 ||
-          queueMeRes.status === 401 ||
-          holdsRes.status === 401
-        ) {
+        if ([buildingsRes, detailRes, queueMeRes, holdsRes, mineRes].some((result) => result.status === 401)) {
           handleSessionExpired();
           return;
         }
 
+        if (!buildingsRes.ok || !Array.isArray(buildingsRes.data)) {
+          throw new Error('Failed to verify current building membership');
+        }
+        const latestSummary = buildingsRes.data.find((building) => building.id === summary.id);
         // Cập nhật lại vai trò và trạng thái thành viên mới nhất từ server
         if (buildingsRes.ok && Array.isArray(buildingsRes.data)) {
           setBuildings(buildingsRes.data);
@@ -232,16 +241,11 @@ export default function LaundryApp() {
 
         // Nếu queue/me hoặc holds lỗi: khóa thao tác, báo refresh thất bại, không coi dữ liệu cũ là đã cập nhật
         const nextHoldsOk = holdsRes.ok && Array.isArray(holdsRes.data);
-        if (!queueMeRes.ok || !queueMeRes.data || !nextHoldsOk) {
-          setHolds([]);
-          setHoldsVerified(false);
-          setParticipation('UNKNOWN');
-          setVerifiedHoldId(null);
-          setSyncError(
-            'Refresh thất bại: không thể đồng bộ trạng thái hàng đợi hoặc giữ máy mới nhất. Các thao tác đã tạm khóa, vui lòng tải lại.',
-          );
-          throw new Error('Failed to refresh queue/me or holds');
+        if (!queueMeRes.ok || !queueMeRes.data || !nextHoldsOk || !mineRes.ok || !Array.isArray(mineRes.data)) {
+          throw new Error('Failed to refresh queue, holds or personal wash cycles');
         }
+        setMyCycles(mineRes.data);
+        setHoldHandover(undefined);
 
         const nextHolds = holdsRes.data!;
         setHolds(nextHolds);
@@ -278,6 +282,14 @@ export default function LaundryApp() {
             setSyncError('Refresh thất bại: dữ liệu lượt giữ máy chưa đồng bộ. Vui lòng tải lại.');
             throw new Error('Hold state mismatch');
           }
+          const handoverRes = await apiJson<WashCycleView | null>(`/api/buildings/${summary.id}/holds/${matchedHold.id}/handover`);
+          if (requestId !== detailRequestId.current) return;
+          if (handoverRes.status === 401) {
+            handleSessionExpired();
+            throw new Error('Session expired while loading handover');
+          }
+          if (!handoverRes.ok || handoverRes.data === undefined) throw new Error('Failed to verify previous wash handover');
+          setHoldHandover(handoverRes.data);
           setParticipation('HELD');
           setVerifiedHoldId(matchedHold.id);
           setSyncError(null);
@@ -288,20 +300,21 @@ export default function LaundryApp() {
           setSyncError(null);
         }
 
-        const latestSummary =
-  buildingsRes.ok && Array.isArray(buildingsRes.data)
-    ? buildingsRes.data.find((b) => b.id === summary.id) ?? summary
-    : summary;
-
-if (latestSummary.role === 'MANAGER' && latestSummary.status === 'APPROVED') {
-          const [pendingRes, membersRes] = await Promise.all([
+        if (latestSummary?.role === 'MANAGER' && latestSummary.status === 'APPROVED') {
+          const [pendingRes, membersRes, issuesRes] = await Promise.all([
             apiJson<PendingMember[]>(`/api/buildings/${summary.id}/members/pending`),
             apiJson<BuildingMember[]>(`/api/buildings/${summary.id}/members`),
+            apiJson<WashCycleView[]>(`/api/buildings/${summary.id}/wash-cycles/issues`),
           ]);
           if (requestId !== detailRequestId.current) return;
 
           // Nếu bị quản lý khác hạ quyền đúng lúc gọi API quản lý -> tự hạ vai trò về RESIDENT và ẩn nút quản lý
-          if (pendingRes.status === 403 || membersRes.status === 403) {
+          if ([pendingRes, membersRes, issuesRes].some((result) => result.status === 401)) {
+            handleSessionExpired();
+            throw new Error('Session expired while loading manager data');
+          }
+          if (pendingRes.status === 403 || membersRes.status === 403 || issuesRes.status === 403) {
+            setIssues([]);
             clearManagerState();
             setBuildings((prev) =>
               prev.map((item) => (item.id === summary.id ? { ...item, role: 'RESIDENT' } : item)),
@@ -310,6 +323,11 @@ if (latestSummary.role === 'MANAGER' && latestSummary.status === 'APPROVED') {
             return;
           }
 
+          if (!pendingRes.ok || !Array.isArray(pendingRes.data) || !membersRes.ok || !Array.isArray(membersRes.data)
+            || !issuesRes.ok || !Array.isArray(issuesRes.data)) {
+            throw new Error('Failed to refresh manager members or wash issues');
+          }
+          setIssues(issuesRes.data);
           if (pendingRes.ok && pendingRes.data) {
             setPendingMembers(pendingRes.data);
           } else if (!options?.silent) {
@@ -322,6 +340,7 @@ if (latestSummary.role === 'MANAGER' && latestSummary.status === 'APPROVED') {
           }
         } else {
           clearManagerState();
+          setIssues([]);
         }
       } catch (err) {
         if (requestId === detailRequestId.current) {
@@ -329,6 +348,9 @@ if (latestSummary.role === 'MANAGER' && latestSummary.status === 'APPROVED') {
           setVerifiedHoldId(null);
           setHolds([]);
           setHoldsVerified(false);
+          setMyCycles(null);
+          setIssues(null);
+          setHoldHandover(undefined);
           if (!options?.silent && isBuildingSwitch) {
             resetBuildingSnapshot();
             setDetailError('Kết nối bị gián đoạn. Hãy thử tải lại dữ liệu tòa.');
@@ -617,6 +639,7 @@ if (latestSummary.role === 'MANAGER' && latestSummary.status === 'APPROVED') {
 
   const isSyncStale = Boolean(syncError);
   const actionsDisabled = busy || isSyncStale;
+  const machineLabels = Object.fromEntries((buildingDetail?.machines ?? []).map(m => [m.id, m.label]));
 
   const myHold =
     !isSyncStale && participation === 'HELD' && verifiedHoldId
@@ -802,6 +825,24 @@ if (latestSummary.role === 'MANAGER' && latestSummary.status === 'APPROVED') {
                   onSessionExpired={handleSessionExpired}
                 />
 
+                {myHold && <WashHoldActions
+                  key={`${selectedSummary.id}:${account.id}:${myHold.id}`}
+                  buildingId={selectedSummary.id}
+                  hold={myHold}
+                  handover={holdHandover}
+                  onRefresh={refreshSelectedBuilding}
+                  onSessionExpired={handleSessionExpired}
+                />}
+
+                <WashCycleCard
+                  key={`${selectedSummary.id}:${account.id}:${isSyncStale}`}
+                  buildingId={selectedSummary.id}
+                  cycles={isSyncStale ? null : myCycles}
+                  machineLabels={machineLabels}
+                  onRefresh={refreshSelectedBuilding}
+                  onSessionExpired={handleSessionExpired}
+                />
+
                 <QueuePanel
                   buildingId={selectedSummary.id}
                   accountId={account.id}
@@ -871,6 +912,15 @@ if (latestSummary.role === 'MANAGER' && latestSummary.status === 'APPROVED') {
                     </form>
                   )}
                 </div>
+
+                {selectedSummary.role === 'MANAGER' && !isSyncStale && <WashManagerPanel
+                  key={`manager:${selectedSummary.id}:${account.id}`}
+                  buildingId={selectedSummary.id}
+                  issues={issues}
+                  machineLabels={machineLabels}
+                  onRefresh={refreshSelectedBuilding}
+                  onSessionExpired={handleSessionExpired}
+                />}
 
                 {selectedSummary.role === 'MANAGER' && (
                   <MemberManagementPanel

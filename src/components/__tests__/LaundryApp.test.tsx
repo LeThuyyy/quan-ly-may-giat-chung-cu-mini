@@ -66,6 +66,12 @@ describe('LaundryApp integration', () => {
                     },
                 ]);
             }
+            if (url === '/api/buildings/b-1/wash-cycles/me' || url === '/api/buildings/b-1/wash-cycles/issues') {
+                return jsonResponse([]);
+            }
+            if (url === '/api/buildings/b-1/holds/hold-1/handover') {
+                return jsonResponse(null);
+            }
             if (url === '/api/buildings/b-1/members/pending') {
                 return jsonResponse([{ accountId: 'res-2', username: 'resident2', displayName: 'Cư dân 2' }]);
             }
@@ -133,6 +139,12 @@ describe('LaundryApp integration', () => {
                 if (failRefresh) return jsonResponse({ error: 'Upstream timeout' }, 502);
                 return jsonResponse([]);
             }
+            if (url === '/api/buildings/b-1/wash-cycles/me' || url === '/api/buildings/b-1/wash-cycles/issues') {
+                return jsonResponse([]);
+            }
+            if (url === '/api/buildings/b-1/holds/hold-1/handover') {
+                return jsonResponse(null);
+            }
             if (url === '/api/buildings/b-1/members/pending') {
                 return jsonResponse([]);
             }
@@ -198,6 +210,12 @@ describe('LaundryApp integration', () => {
             }
             if (url === '/api/buildings/b-1/holds') {
                 return jsonResponse([]);
+            }
+            if (url === '/api/buildings/b-1/wash-cycles/me' || url === '/api/buildings/b-1/wash-cycles/issues') {
+                return jsonResponse([]);
+            }
+            if (url === '/api/buildings/b-1/holds/hold-1/handover') {
+                return jsonResponse(null);
             }
             if (url === '/api/buildings/b-1/members/pending') {
                 if (currentRole !== 'MANAGER') return jsonResponse({ error: 'Forbidden' }, 403);
