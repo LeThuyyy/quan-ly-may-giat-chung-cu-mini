@@ -3,6 +3,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import LaundryApp from '../LaundryApp';
+import { snapshotFixture } from './snapshot-fixture';
 
 const fetchMock = vi.fn<typeof fetch>();
 const base = '/api/buildings/b-1';
@@ -22,6 +23,7 @@ function fixture(initial: 'NONE' | 'HELD' | 'WASHING' = 'NONE') {
   let staleManager403 = false;
   fetchMock.mockImplementation(async (input) => {
     const url = String(input);
+    if (url === `${base}/snapshot`) return snapshotFixture(fetchMock, 'b-1');
     if (url === failed) return json({ error: 'Test upstream failure' }, 502);
     if (url === '/api/me') return json({ id: 'mgr-1', username: 'manager1', displayName: 'Quản lý 1' });
     if (url === '/api/buildings') {
@@ -106,13 +108,13 @@ describe('combined refresh guards and wash data', () => {
     const config = fixture(); render(<LaundryApp />); await ready();
     config.fail(`${base}/wash-cycles/me`); await refresh(); await stale();
     config.fail(null);
-    let resolve!: (response: Response) => void;
-    config.block(() => new Promise((done) => { resolve = done; }));
+    const resolves: Array<(response: Response) => void> = [];
+    config.block(() => new Promise((done) => { resolves.push(done); }));
     fireEvent.click(screen.getByRole('button', { name: 'Làm mới' }));
     expect(screen.getByRole('button', { name: 'Tạo mã mời 7 ngày' }).hasAttribute('disabled')).toBe(true);
     expect(screen.queryByRole('button', { name: 'Xác nhận máy trống' })).toBeNull();
     config.block(null);
-    await act(async () => { resolve(json([{ id: 'b-1', name: 'Tòa tích hợp', role: 'MANAGER', status: 'APPROVED' }])); });
+    await act(async () => { for (const resolve of resolves) resolve(json([{ id: 'b-1', name: 'Tòa tích hợp', role: 'MANAGER', status: 'APPROVED' }])); });
     await waitFor(() => expect(screen.queryByText(/Refresh thất bại:/)).toBeNull());
   });
 });

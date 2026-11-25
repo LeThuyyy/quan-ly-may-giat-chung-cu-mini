@@ -40,6 +40,12 @@ public class QueueEntry {
     public boolean isActive() { return active; }
     public State getState() { return state; }
     public Instant getJoinedAt() { return joinedAt; }
+    public void exchangePositionWith(QueueEntry other) {
+        if (other==null || id.equals(other.id) || !building.getId().equals(other.building.getId())
+            || state!=State.WAITING || other.state!=State.WAITING || position>=other.position)
+            throw new IllegalStateException("Chỉ hoán đổi hai lượt còn chờ theo thứ tự hợp lệ");
+        long previous=position; position=other.position; other.position=previous;
+    }
     public void setReady(boolean ready) { if (state != State.WAITING) throw new IllegalStateException("Chỉ người đang chờ được đổi Sẵn sàng"); this.ready = ready; }
     public void hold() { if (state != State.WAITING || !ready) throw new IllegalStateException("Lượt chưa sẵn sàng nhận máy"); state = State.HELD; }
     public void restore() { if (state != State.HELD) throw new IllegalStateException("Không có lượt giữ để khôi phục"); state = State.WAITING; }

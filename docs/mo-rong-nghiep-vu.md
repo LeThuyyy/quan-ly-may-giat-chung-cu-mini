@@ -1,0 +1,36 @@
+# Mở rộng nghiệp vụ — bản làm việc
+
+Baseline: develop `7821931`. Nhánh `feature/business-expansion` được chuẩn bị bàn giao qua PR sau khi Thủy chạy thử và xác nhận ổn. Mã gốc A/B/C được giữ, phần mở rộng do Thủy yêu cầu và nghiệm thu với hỗ trợ triển khai/kiểm thử của Claude Code. Đây là bản bài tập cục bộ, không phải tuyên bố hoàn thành mọi hạng mục hardening hoặc đủ điều kiện vận hành thật.
+
+## Những phần đã triển khai
+
+- Gỡ/khôi phục cư dân: manager DELETE `/api/buildings/{id}/members/{accountId}`; POST `.../restore`; GET `/members/removed?page=0&size=20`. Không tự gỡ, không gỡ quản lý, chặn mẻ chưa hoàn tất. Gỡ WAITING/HELD kết thúc yêu cầu/hold, xét cấp lại. REMOVED không vào lại bằng mã mời; khôi phục PENDING cần duyệt riêng.
+- Thu hồi lời mời: GET `/invitations` phân trang, POST `/invitations/{invitationId}/revoke`. ID quản trị UUID riêng, không trả token/hash. Link cũ có backfill metadata, vẫn giữ primary key hash. Thu hồi idempotent không tự hủy đơn PENDING. Join kiểm tra lại link sau khóa tòa, dùng Clock.
+- Đổi lượt: GET/POST `/swaps`, POST `/swaps/{swapId}/accept|reject|cancel`. Người gửi đang chờ mời người phía sau; hai vị trí đổi trực tiếp, readiness giữ nguyên; hết hạn 10 phút; một outgoing chưa giải quyết; assignment/leave/removal invalidation vĩnh viễn. Giao dịch theo khóa tòa. GET chỉ project EXPIRED, không ghi dữ liệu.
+- ETA: GET `/eta/me`, chỉ ready WAITING có khoảng giờ; dùng inspectionAt mẻ thật, lượt tương lai 45 phút +5–10 bàn giao, hold có thời gian chờ còn lại. Một máy = một slot dù mẻ cũ và inspection hold cùng tồn tại. Khoảng tham khảo, không cận trên bảo đảm; unready/unverified/sự cố không hứa giờ.
+- QR/trang máy: `/buildings/{buildingId}/machines/{machineId}`, GET API machine detail chỉ member APPROVED và đúng máy/tòa; QR SVG sinh cục bộ từ APP_ORIGIN trusted (mặc định localhost:3000), không token. Login giữ URL trực tiếp. QR tĩnh không chứng minh hiện diện. Nếu chạy cổng khác phải đặt APP_ORIGIN tương ứng. Điện thoại không quét được URL localhost của máy tính.
+- Chat: GET/POST `/chat/messages`; POST `/chat/messages/{messageId}/report|hide`; GET `/chat/reports` quản lý. Văn bản 1–1000 ký tự, cooldown 5 giây/tài khoản/tòa, UUID retry, báo cáo không auto-hide. Hidden body=null, tombstone. Chỉ APPROVED, lưu30ngày, job dọn theo batch. Chat tab riêng, read polling5giây khi đang hiện; không ghi trạng thái giặt.
+- Nhật ký: GET `/activity?page=0&size=20&type=&machineId=`, chỉ quản lý, lưu90ngày; event ghi cùng transaction (MANDATORY), rollback không giữ event giả, tác vụ hệ thống actorId=null. Chỉ allowlist trạng thái/UUID, không token/body chat. UI quản trị có pagination, chưa có filter UI (API hỗ trợ).
+
+## Nền tảng được sửa
+
+BuildingAccessService repository-only: các mutation giặt/cấp máy kiểm tra membership sau khóa tòa, chặn race removal. UI quản trị/chat/swap có scope/unmount guard. Wash components dùng scoped fetch/refresh để phản hồi mutation cũ không tác động phiên mới. Polling vận hành đổi sang completion-scheduled, tránh interval chồng lặp.
+
+## Kiểm chứng trong lượt hiện tại
+
+- Java: đã chạy `clean test` cuối đợt sau snapshot/test cạnh tranh bổ sung, **88/88 đạt**, không lỗi/thất bại/bỏ qua. Có test ETA giữ UNAVAILABLE nếu có hold hết hạn chưa xử lý, không giả máy trống.
+- Frontend sau snapshot: **212/212 test đạt**, docs/lint/typecheck đạt; production build cuối đợt exit0.
+- Thủy đã mở bản mở rộng ở localhost:3006, chạy thử và xác nhận ổn ở các thao tác đã thử. Đây là nghiệm thu thủ công của người dùng, không thay thế các kiểm tra còn thiếu bên dưới.
+- Đã chạy Java/Next riêng tại 8086/3006, database `.data/expansion-preview`; qua HTTP thật: tạo thành viên, ACCEPTED swap, ETA UNREADY, post/hide chat body=null, QR SVG, revoke, remove/restore và activity list đều đạt. Đây không phải test trình duyệt đầy đủ/mobile.
+
+## Các việc CHƯA hoàn tất so với kế hoạch
+
+- Đã thêm GET `/snapshot` dưới khóa tòa, trả machine/queue, membership hiện tại, holds (kể cả ACTIVE quá hạn chưa xử lý), yêu cầu cá nhân, mẻ, previousCycle, ETA/swap và serverNow. Dashboard dùng endpoint này; danh sách quản trị tách riêng. ETA/swap panel hiện vẫn fetch riêng theo refreshKey nên không khẳng định toàn bộ màn hình cùng một snapshot. GET không dispatch/expire/ghi audit. Hai test snapshot Java và ba test bridge mới đã đạt; bổ sung ba test cạnh tranh swap/chat sau lần clean85test đã đạt riêng.
+- Chưa đồng bộ độ lệch đồng hồ server ở mọi countdown, chưa chuẩn hóa mọi mutation cha/refresh cũ; phạm vi scoped guard hiện ở wash/new panels.
+- Chat hiện phân trang page/size và refresh trang đang xem, chưa cursor/delta; cooldown và quyền ở Java. Khi đổi draft sau kết quả chưa rõ cần xem kỹ quy tắc UUID, không tuyên bố chống mọi loại lặp.
+- QR/trang máy chưa nghiệm thu bằng quét điện thoại, chưa kiểm tra kết nối LAN. Machine page chưa polling chung như dashboard, có nút tải lại.
+- Đã bổ sung test double accept, invalidate do đổi thứ tự và concurrent chat cooldown/idempotency. Chưa bao phủ hết swap vs removal/timeouts, mọi ETA/multi-machine hoặc migration schema trên file H2 cũ thật. Test backfill hiện mô phỏng row metadata null trong H2 memory.
+- Đã chạy Playwright/Chrome thao tác thật sau snapshot: gửi/nhận swap, chat, revoke, remove/restore, activity, machine QR và layout390px; PASS, không pageerror. Ảnh/results cục bộ ở Downloads/kiem-thu-snapshot-20261125. Chưa test hết offline/scope/QR đăng nhập/quét điện thoại, không coi smoke test này là nghiệm thu mọi luồng. Audit chỉ ghi sự kiện mới sau nâng cấp, không tạo lịch sử giả cho quá khứ.
+- Không tự reset/drop database cũ. Schema nullable managementId là nâng cấp additive, không tự rollback schema khi revert code.
+
+Không commit dữ liệu thử, node_modules, video, ZIP hay next-env.d.ts tự sinh. Lệnh kiểm tra: `mvn -B -f backend/pom.xml clean test`, `npm run check`, `npm run build`.

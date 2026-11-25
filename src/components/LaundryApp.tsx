@@ -2,6 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import AuthSection from '@/components/AuthSection';
+import BuildingAdminPanel from '@/components/BuildingAdminPanel';
 import ConfirmMachineFreeButton from '@/components/ConfirmMachineFreeButton';
 import MachineHoldCard, { MachineHoldView } from '@/components/MachineHoldCard';
 import MemberManagementPanel, { BuildingMember, PendingMember } from '@/components/MemberManagementPanel';
@@ -9,6 +10,10 @@ import QueuePanel, { QueueEntryView, QueueParticipation } from '@/components/Que
 import WashCycleCard, { WashCycleView } from '@/components/WashCycleCard';
 import WashHoldActions from '@/components/WashHoldActions';
 import WashManagerPanel from '@/components/WashManagerPanel';
+import ChatPanel from '@/components/ChatPanel';
+import QueueEstimate from '@/components/QueueEstimate';
+import QueueSwapPanel from '@/components/QueueSwapPanel';
+import Link from 'next/link';
 
 interface AccountView {
   id: string;
@@ -43,6 +48,16 @@ interface QueueMeResponse {
   holdId: string | null;
   machineId: string | null;
   expiresAt: string | null;
+  serverNow: string;
+}
+
+interface OperationalSnapshot {
+  building: BuildingView;
+  membership: BuildingSummary;
+  queueStatus: QueueMeResponse;
+  holds: MachineHoldView[];
+  myCycles: WashCycleView[];
+  previousCycle: WashCycleView | null;
   serverNow: string;
 }
 
@@ -87,6 +102,8 @@ async function apiJson<T>(url: string, init?: RequestInit): Promise<{ ok: boolea
 export default function LaundryApp() {
   const [account, setAccount] = useState<AccountView | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
+  const [section, setSection] = useState<'laundry' | 'chat'>('laundry');
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const [buildings, setBuildings] = useState<BuildingSummary[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -171,7 +188,7 @@ export default function LaundryApp() {
       const requestId = ++detailRequestId.current;
       if (!summary || summary.status !== 'APPROVED') {
         resetBuildingSnapshot();
-        return;
+        throw new Error('Building membership is not approved');
       }
 
       const isBuildingSwitch = buildingDetailFor.current !== summary.id;
@@ -183,15 +200,17 @@ export default function LaundryApp() {
       }
 
       try {
-        const [buildingsRes, detailRes, queueMeRes, holdsRes, mineRes] = await Promise.all([
+        const [buildingsRes, snapshotRes] = await Promise.all([
           apiJson<BuildingSummary[]>('/api/buildings'),
-          apiJson<BuildingView>(`/api/buildings/${summary.id}`),
-          apiJson<QueueMeResponse>(`/api/buildings/${summary.id}/queue/me`),
-          apiJson<MachineHoldView[]>(`/api/buildings/${summary.id}/holds`),
-          apiJson<WashCycleView[]>(`/api/buildings/${summary.id}/wash-cycles/me`),
+          apiJson<OperationalSnapshot>(`/api/buildings/${summary.id}/snapshot`),
         ]);
+        const snapshot = snapshotRes.data;
+        const detailRes = { ...snapshotRes, data: snapshot?.building };
+        const queueMeRes = { ...snapshotRes, data: snapshot?.queueStatus };
+        const holdsRes = { ...snapshotRes, data: snapshot?.holds };
+        const mineRes = { ...snapshotRes, data: snapshot?.myCycles };
 
-        if (requestId !== detailRequestId.current) return;
+        if (requestId !== detailRequestId.current) throw new Error('Refresh scope was replaced');
 
         if ([buildingsRes, detailRes, queueMeRes, holdsRes, mineRes].some((result) => result.status === 401)) {
           handleSessionExpired();
@@ -201,15 +220,19 @@ export default function LaundryApp() {
         if (!buildingsRes.ok || !Array.isArray(buildingsRes.data)) {
           throw new Error('Failed to verify current building membership');
         }
-        const latestSummary = buildingsRes.data.find((building) => building.id === summary.id);
+        const latestSummary = snapshot?.membership;
+        if (snapshotRes.ok && (!snapshot || snapshot.building.id !== summary.id || latestSummary?.id !== summary.id
+          || latestSummary.status !== 'APPROVED' || !Number.isFinite(Date.parse(snapshot.serverNow)))) {
+          throw new Error('Invalid operational snapshot');
+        }
         // Cập nhật lại vai trò và trạng thái thành viên mới nhất từ server
         if (buildingsRes.ok && Array.isArray(buildingsRes.data)) {
-          setBuildings(buildingsRes.data);
-          const freshSummary = buildingsRes.data.find((b) => b.id === summary.id);
+          setBuildings(buildingsRes.data.map(item => item.id === summary.id && latestSummary ? latestSummary : item));
+          const freshSummary = latestSummary ?? buildingsRes.data.find((b) => b.id === summary.id);
           if (!freshSummary) {
             resetBuildingSnapshot();
             setDetailError('Bạn không còn quyền truy cập tòa nhà này.');
-            return;
+            throw new Error('Building access was removed');
           }
           if (summary.role === 'MANAGER' && freshSummary.role !== 'MANAGER') {
             clearManagerState();
@@ -226,7 +249,7 @@ export default function LaundryApp() {
           setVerifiedHoldId(null);
           setHolds([]);
           setHoldsVerified(false);
-          if (!options?.silent || isBuildingSwitch) {
+          if (isBuildingSwitch) {
             resetBuildingSnapshot();
             setDetailError(detailRes.error ?? 'Không tải được chi tiết tòa.');
           } else {
@@ -282,14 +305,8 @@ export default function LaundryApp() {
             setSyncError('Refresh thất bại: dữ liệu lượt giữ máy chưa đồng bộ. Vui lòng tải lại.');
             throw new Error('Hold state mismatch');
           }
-          const handoverRes = await apiJson<WashCycleView | null>(`/api/buildings/${summary.id}/holds/${matchedHold.id}/handover`);
-          if (requestId !== detailRequestId.current) return;
-          if (handoverRes.status === 401) {
-            handleSessionExpired();
-            throw new Error('Session expired while loading handover');
-          }
-          if (!handoverRes.ok || handoverRes.data === undefined) throw new Error('Failed to verify previous wash handover');
-          setHoldHandover(handoverRes.data);
+          if (snapshot?.previousCycle === undefined) throw new Error('Unverified previous wash handover');
+          setHoldHandover(snapshot.previousCycle);
           setParticipation('HELD');
           setVerifiedHoldId(matchedHold.id);
           setSyncError(null);
@@ -306,7 +323,7 @@ export default function LaundryApp() {
             apiJson<BuildingMember[]>(`/api/buildings/${summary.id}/members`),
             apiJson<WashCycleView[]>(`/api/buildings/${summary.id}/wash-cycles/issues`),
           ]);
-          if (requestId !== detailRequestId.current) return;
+          if (requestId !== detailRequestId.current) throw new Error('Refresh scope was replaced');
 
           // Nếu bị quản lý khác hạ quyền đúng lúc gọi API quản lý -> tự hạ vai trò về RESIDENT và ẩn nút quản lý
           if ([pendingRes, membersRes, issuesRes].some((result) => result.status === 401)) {
@@ -320,7 +337,7 @@ export default function LaundryApp() {
               prev.map((item) => (item.id === summary.id ? { ...item, role: 'RESIDENT' } : item)),
             );
             setNotice('Bạn không còn quyền quản lý tại tòa này.');
-            return;
+            throw new Error('Manager authority changed during refresh');
           }
 
           if (!pendingRes.ok || !Array.isArray(pendingRes.data) || !membersRes.ok || !Array.isArray(membersRes.data)
@@ -342,6 +359,7 @@ export default function LaundryApp() {
           clearManagerState();
           setIssues([]);
         }
+        setRefreshKey(value => value + 1);
       } catch (err) {
         if (requestId === detailRequestId.current) {
           setParticipation('UNKNOWN');
@@ -367,7 +385,7 @@ export default function LaundryApp() {
   );
 
   const refreshSelectedBuilding = useCallback(async () => {
-    if (!selectedId || !selectedRole || !selectedStatus) return;
+    if (!selectedId || !selectedRole || selectedStatus !== 'APPROVED') throw new Error('Building scope is not authorized');
     await loadBuildingDetail({ id: selectedId, name: '', role: selectedRole, status: selectedStatus });
   }, [selectedId, selectedRole, selectedStatus, loadBuildingDetail]);
 
@@ -409,22 +427,28 @@ export default function LaundryApp() {
       status: selectedStatus,
     };
 
-    const tick = () => {
-      if (document.visibilityState === 'visible') {
-        void loadBuildingDetail(summary, { silent: true }).catch(() => {});
+    let active = true;
+    let running = false;
+    let timer: number;
+    const tick = async () => {
+      if (!active || running) return;
+      window.clearTimeout(timer);
+      running = true;
+      try {
+        if (document.visibilityState === 'visible') await loadBuildingDetail(summary, { silent: true });
+      } catch { /* loadBuildingDetail already closes stale action surfaces */ }
+      finally {
+        running = false;
+        if (active) timer = window.setTimeout(() => void tick(), POLL_INTERVAL_MS);
       }
     };
-
-    const intervalId = window.setInterval(tick, POLL_INTERVAL_MS);
-    const onVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        void loadBuildingDetail(summary, { silent: true }).catch(() => {});
-      }
-    };
+    timer = window.setTimeout(() => void tick(), POLL_INTERVAL_MS);
+    const onVisibilityChange = () => { if (document.visibilityState === 'visible') void tick(); };
     document.addEventListener('visibilitychange', onVisibilityChange);
 
     return () => {
-      window.clearInterval(intervalId);
+      active = false;
+      window.clearTimeout(timer);
       document.removeEventListener('visibilitychange', onVisibilityChange);
     };
   }, [account, selectedId, selectedRole, selectedStatus, loadBuildingDetail]);
@@ -816,6 +840,13 @@ export default function LaundryApp() {
                   )}
                 </div>
 
+                <nav aria-label="Mục tòa nhà">
+                  <button type="button" className="btn btn-outline" aria-pressed={section === 'laundry'} onClick={() => setSection('laundry')}>Giặt và hàng đợi</button>{' '}
+                  <button type="button" className="btn btn-outline" aria-pressed={section === 'chat'} onClick={() => setSection('chat')}>Trò chuyện</button>
+                </nav>
+                {section === 'chat' && <ChatPanel buildingId={selectedSummary.id} accountId={account.id}
+                  isManager={selectedSummary.role === 'MANAGER'} onSessionExpired={handleSessionExpired} />}
+                {section === 'laundry' && <>
                 <MachineHoldCard
                   buildingId={selectedSummary.id}
                   accountId={account.id}
@@ -852,6 +883,12 @@ export default function LaundryApp() {
                   onSessionExpired={handleSessionExpired}
                 />
 
+                {!isSyncStale && <>
+                  <QueueEstimate buildingId={selectedSummary.id} accountId={account.id} refreshKey={refreshKey} onSessionExpired={handleSessionExpired} />
+                  <QueueSwapPanel buildingId={selectedSummary.id} accountId={account.id} entries={buildingDetail.queue}
+                    refreshKey={refreshKey} onRefresh={refreshSelectedBuilding} onSessionExpired={handleSessionExpired} />
+                </>}
+
                 <div className="panel">
                   <h3>Danh sách máy ({buildingDetail.machines.length}/30)</h3>
                   <p className="muted-note">
@@ -860,7 +897,7 @@ export default function LaundryApp() {
                   <div className="machine-grid">
                     {buildingDetail.machines.map((m) => (
                       <div key={m.id} className="machine-card">
-                        <strong>{m.label}</strong>
+                        <strong><Link href={`/buildings/${selectedSummary.id}/machines/${m.id}`}>{m.label} · Chi tiết/QR</Link></strong>
                         <span className={m.status === 'AVAILABLE' ? 'pill pill-ready' : 'pill pill-maint'}>
                           {m.status === 'AVAILABLE'
                             ? 'Đang mở'
@@ -922,6 +959,14 @@ export default function LaundryApp() {
                   onSessionExpired={handleSessionExpired}
                 />}
 
+                <BuildingAdminPanel
+                  buildingId={selectedSummary.id}
+                  accountId={account.id}
+                  isManager={selectedSummary.role === 'MANAGER' && !isSyncStale}
+                  onRefresh={refreshSelectedBuilding}
+                  onSessionExpired={handleSessionExpired}
+                />
+
                 {selectedSummary.role === 'MANAGER' && (
                   <MemberManagementPanel
                     currentAccountId={account.id}
@@ -934,6 +979,7 @@ export default function LaundryApp() {
                     onChangeRole={handleChangeMemberRole}
                   />
                 )}
+                </>}
               </>
             )}
           </div>

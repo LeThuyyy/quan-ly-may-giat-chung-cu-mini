@@ -7,7 +7,7 @@ import java.util.UUID;
 @Table(name = "memberships", uniqueConstraints = @UniqueConstraint(columnNames = {"building_id", "account_id"}))
 public class Membership {
     public enum Role { MANAGER, RESIDENT }
-    public enum Status { PENDING, APPROVED }
+    public enum Status { PENDING, APPROVED, REMOVED }
     @Id private UUID id;
     @ManyToOne(optional = false, fetch = FetchType.LAZY) private Building building;
     @ManyToOne(optional = false, fetch = FetchType.LAZY) private Account account;
@@ -28,6 +28,17 @@ public class Membership {
     public String getBuildingName() { return building.getName(); }
     public Role getRole() { return role; }
     public Status getStatus() { return status; }
-    public void approve() { status = Status.APPROVED; }
+    public void approve() {
+        if (status != Status.PENDING) throw new IllegalStateException("Chỉ duyệt yêu cầu đang chờ");
+        status = Status.APPROVED;
+    }
+    public void remove() {
+        if (role != Role.RESIDENT) throw new IllegalStateException("Phải hạ vai trò quản lý trước khi gỡ");
+        status = Status.REMOVED;
+    }
+    public void restore() {
+        if (status != Status.REMOVED) throw new IllegalStateException("Thành viên chưa bị gỡ");
+        status = Status.PENDING;
+    }
     public void setRole(Role role) { this.role = role; }
 }
