@@ -31,6 +31,14 @@ BuildingAccessService repository-only: các mutation giặt/cấp máy kiểm tr
 - Hồi quy Java tạo55 lời mời lịch sử mới hơn và incoming còn hạn: outgoing cũ luôn truy cập được, pending có phân trang, đúng mốc hết hạn không còn actionable. UI kiểm tra hủy outgoing khi đang xem trang lịch sử khác. Test chat dùng timer và response chậm: giữ focus/draft xuyên poll5giây; lỗi502 vẫn khóa mà không xóa nội dung.
 - Kết quả sau sửa: `clean test` Java **89/89 đạt**, frontend **220/220 đạt**, docs/lint/typecheck và production build đạt. Chưa kiểm thử lại trình duyệt thật sau hai sửa này; kết quả browser mô tả ở các mục trước thuộc bản trước sửa.
 
+## Hoàn thiện đồng bộ, giao diện và kiểm thử bổ sung — 26/11/2026
+
+- Bổ sung route Next.js `POST /api/buildings/{id}/holds/{holdId}/unusable` nối tới endpoint Java hiện có và nút **Báo máy chưa dùng được** trong `WashHoldActions` khi máy đã trống nhưng gặp sự cố kỹ thuật tại chỗ, đảm bảo cư dân được khôi phục mốc vị trí hàng và máy chuyển sang `NEEDS_CHECK`.
+- Đồng bộ độ lệch đồng hồ máy chủ (`serverNow`) cho các bộ đếm ngược tại `MachineHoldCard`, `WashHoldActions`, `WashCycleCard` và bổ sung `serverNow` + cơ chế polling 5 giây (tạm dừng khi tab ẩn) cho `MachineDetailPage`.
+- Loại bỏ hiện tượng nhấp nháy thông báo lỗi sự cố giả trên `WashManagerPanel` trong lúc đang tải dữ liệu quản lý lần đầu và sửa fixture `LaundryApp.test.tsx` để không phát sinh cảnh báo thiếu `key` của React.
+- Nâng cấp toàn diện hệ thống thiết kế UI/UX (`globals.css` và các component), bổ sung thanh tóm tắt trạng thái cá nhân/tòa nhà, chuẩn hóa toàn bộ nút/form/danh sách ở `ChatPanel`, `QueueEstimate`, `QueueSwapPanel`, `BuildingAdminPanel`, `MachineDetailPage`, và tối ưu thứ tự hiển thị ưu tiên thao tác vận hành trên màn hình di động (`360px`, `390px`, `768px`, `1024px`, `1440px`).
+- Bổ sung kiểm thử cạnh tranh giữa chấp nhận đổi lượt và gỡ thành viên (`QueueSwapTest`), kiểm thử mô phỏng ETA nhiều máy có bảo trì/lượt giữ (`MachineDetailEtaIntegrationTest`), kiểm thử route `/unusable` và kiểm thử bù lệch đồng hồ client/server: Java `clean test` đạt **91/91**, Frontend `npm run check` đạt **230/230**, production build đạt.
+
 ## Các việc CHƯA hoàn tất so với kế hoạch
 
 - Đã thêm GET `/snapshot` dưới khóa tòa, trả machine/queue, membership hiện tại, holds (kể cả ACTIVE quá hạn chưa xử lý), yêu cầu cá nhân, mẻ, previousCycle, ETA/swap và serverNow. Dashboard dùng endpoint này; danh sách quản trị tách riêng. ETA/swap panel hiện vẫn fetch riêng theo refreshKey nên không khẳng định toàn bộ màn hình cùng một snapshot. GET không dispatch/expire/ghi audit. Hai test snapshot Java và ba test bridge mới đã đạt; bổ sung ba test cạnh tranh swap/chat sau lần clean85test đã đạt riêng.

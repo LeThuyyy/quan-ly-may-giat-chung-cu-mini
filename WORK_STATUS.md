@@ -2,6 +2,28 @@
 
 > Bắt đầu bằng file này và `git status --short --branch`. Chỉ mở các file liên quan tác vụ; không coi nội dung này là quyền phê duyệt merge/push.
 
+## PRODUCT REFINEMENT — 2026-11-26
+
+- **Trạng thái workspace ban đầu:** Nhánh `develop` (`76680a6`, đã tích hợp PR #1–#13). Baseline ban đầu đạt 89/89 test Java và 220/220 test frontend.
+- **Các Skill đã cài đặt và áp dụng (`.agents/skills/`, đã loại trừ khỏi Git commit qua `.git/info/exclude`):** `frontend-design`, `web-design-guidelines`, `vercel-react-best-practices`, `webapp-testing`, `systematic-debugging`, `test-driven-development`, `requesting-code-review`, `verification-before-completion`, `find-skills`.
+- **Các vấn đề quan trọng phát hiện qua audit code & trình duyệt thật:**
+  1. Backend Java đã có endpoint `POST /api/buildings/{buildingId}/holds/{holdId}/unusable` nhưng thiếu proxy route ở Next.js và thiếu nút thao tác trên UI khi cư dân nhận máy trống nhưng máy gặp lỗi kỹ thuật.
+  2. Các đồng hồ đếm ngược (`MachineHoldCard`, `WashHoldActions`, `WashCycleCard`) so sánh trực tiếp `Date.now()` của trình duyệt với `expiresAt`/`estimatedEndAt` của server mà chưa bù độ lệch bằng `serverNow`.
+  3. Trang chi tiết máy (`/buildings/{buildingId}/machines/{machineId}`) chưa có polling tự động khi mở trang qua QR, chưa trả `serverNow` từ `MachineDetailService`, và hiển thị mã trạng thái thô (`AVAILABLE`).
+  4. Khi quản lý tải trang lần đầu, `issues` khởi tạo bằng `null` khiến `WashManagerPanel` nhấp nháy thông báo lỗi `"Không tải được danh sách sự cố"` trước khi request hoàn tất; fixture trong `LaundryApp.test.tsx` dùng `accountId` thay vì `id` gây cảnh báo React missing `key`.
+  5. Giao diện ở các component mở rộng (`ChatPanel`, `QueueSwapPanel`, `QueueEstimate`, `BuildingAdminPanel`, `MachineDetailPage`, `MachineQrButton`) chưa được gắn class từ hệ thống thiết kế; trên mobile (`360px`/`390px`), hai form phụ (`Tạo tòa mới`, `Tham gia bằng mã mời`) chiếm toàn bộ màn hình đầu tiên trước phần hàng đợi và máy giặt.
+  6. `README.md` và `backend/README.md` chưa cập nhật theo tiến độ thực tế của nhánh `develop`.
+- **Công việc đã hoàn thành (chia theo 3 nhánh đẩy lên GitHub):**
+  - `fix/business-completeness-and-sync`: Bổ sung route Next.js `/holds/[holdId]/unusable` và nút báo máy lỗi kỹ thuật trong `WashHoldActions`; đồng bộ `serverNow` cho mọi countdown và `MachineDetailService`; thêm polling 5 giây cho `MachineDetailPage`; sửa lỗi nhấp nháy `WashManagerPanel` và React key warning; chuẩn hóa định dạng mã nguồn Java và bổ sung test cạnh tranh swap-vs-removal cùng test ETA nhiều máy.
+  - `feat/ui-ux-product-redesign`: Nâng cấp toàn diện hệ thống thiết kế trong `globals.css` và tất cả component; thêm thanh tóm tắt trạng thái vận hành cá nhân/tòa nhà; ưu tiên hiển thị bảng điều khiển tòa nhà trước form tạo/tham gia tòa trên màn hình di động; định dạng thời gian tiếng Việt rõ ràng trong bảng quản trị.
+  - `docs/sync-handover-and-final-polish`: Cập nhật `README.md`, `backend/README.md`, `docs/mo-rong-nghiep-vu.md` và `WORK_STATUS.md` khớp trạng thái thực tế của mã nguồn.
+- **Kết quả kiểm thử thực tế:**
+  - Backend Java (`mvn -B -f backend/pom.xml clean test`): **91/91 test đạt** (`0` lỗi, `0` thất bại, `0` bỏ qua).
+  - Frontend (`npm run check`): docs/lint/typecheck đạt, **230/230 test đạt** (20 test files, 0 cảnh báo stderr).
+  - Production build (`npx next build --webpack`): đạt (`exit 0`).
+  - Trình duyệt thật (Playwright + Chrome kết nối Java backend thật trên `127.0.0.1:8080` và Next.js trên `localhost:3000`): đã kiểm thử các vai trò Quản lý, Cư dân đã duyệt, Cư dân chờ duyệt, Khách chưa đăng nhập ở các kích thước `360px`, `390px`, `768px`, `1024px`, `1440px`; không có lỗi console/pageerror, không tràn ngang (`overflow: NONE`).
+- **Giới hạn còn tồn tại:** Phiên opaque của Next.js lưu in-memory và H2 dùng file cục bộ với `ddl-auto=update`, phù hợp phạm vi bài tập lớn chạy cục bộ, chưa предназнач cho môi trường multi-instance hoặc triển khai Internet công khai.
+
 ## Nút xác nhận máy trống phần A — 2026-11-22
 
 - PR #6 (test cạnh tranh) đã squash merge vào develop thành `0566db9`. Các ghi chú bên dưới là lịch sử.
