@@ -23,6 +23,14 @@ BuildingAccessService repository-only: các mutation giặt/cấp máy kiểm tr
 - Thủy đã mở bản mở rộng ở localhost:3006, chạy thử và xác nhận ổn ở các thao tác đã thử. Đây là nghiệm thu thủ công của người dùng, không thay thế các kiểm tra còn thiếu bên dưới.
 - Đã chạy Java/Next riêng tại 8086/3006, database `.data/expansion-preview`; qua HTTP thật: tạo thành viên, ACCEPTED swap, ETA UNREADY, post/hide chat body=null, QR SVG, revoke, remove/restore và activity list đều đạt. Đây không phải test trình duyệt đầy đủ/mobile.
 
+## Sửa hồi quy lời mời và chat — 26/11/2026
+
+- Nhánh local `fix/swap-inbox-chat-composer`: chưa commit/push. Giữ nguyên production schema, không reset dữ liệu.
+- Thêm GET `/swaps/pending?page=&size=` chỉ trả PENDING còn hạn, và GET `/swaps/outgoing` cho lời mời gửi đang chờ của chính tài khoản. API cũ `/swaps` tiếp tục lịch sử phân trang. Bridge kiểm tra page/size thay vì cố định trang0; UI chia danh sách đang chờ/lịch sử, có trang trước/sau. Lời mời gửi đang chờ hiện riêng với nút hủy, không bị trang lịch sử hoặc incoming mới đẩy mất. Java vẫn xác thực APPROVED và kiểm tra hạn; GET không ghi/expire.
+- Chat tách trạng thái đọc nền và mutation: poll thành công không disable textarea hoặc mất focus; đang gửi hoặc lỗi/mất quyền thì vẫn khóa, giữ draft khi đọc lỗi. Nút gửi tiếp tục chặn trong lúc request khác chưa xong, không tự retry mutation.
+- Hồi quy Java tạo55 lời mời lịch sử mới hơn và incoming còn hạn: outgoing cũ luôn truy cập được, pending có phân trang, đúng mốc hết hạn không còn actionable. UI kiểm tra hủy outgoing khi đang xem trang lịch sử khác. Test chat dùng timer và response chậm: giữ focus/draft xuyên poll5giây; lỗi502 vẫn khóa mà không xóa nội dung.
+- Kết quả sau sửa: `clean test` Java **89/89 đạt**, frontend **220/220 đạt**, docs/lint/typecheck và production build đạt. Chưa kiểm thử lại trình duyệt thật sau hai sửa này; kết quả browser mô tả ở các mục trước thuộc bản trước sửa.
+
 ## Các việc CHƯA hoàn tất so với kế hoạch
 
 - Đã thêm GET `/snapshot` dưới khóa tòa, trả machine/queue, membership hiện tại, holds (kể cả ACTIVE quá hạn chưa xử lý), yêu cầu cá nhân, mẻ, previousCycle, ETA/swap và serverNow. Dashboard dùng endpoint này; danh sách quản trị tách riêng. ETA/swap panel hiện vẫn fetch riêng theo refreshKey nên không khẳng định toàn bộ màn hình cùng một snapshot. GET không dispatch/expire/ghi audit. Hai test snapshot Java và ba test bridge mới đã đạt; bổ sung ba test cạnh tranh swap/chat sau lần clean85test đã đạt riêng.
