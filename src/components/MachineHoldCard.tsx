@@ -152,15 +152,18 @@ function ActiveHoldCard({
   const countdown = seconds === null ? '--:--' : `${Math.floor(seconds / 60).toString().padStart(2, '0')}:${(seconds % 60).toString().padStart(2, '0')}`;
 
   return (
-    <section className="panel" aria-label="Lượt giữ máy của bạn" aria-busy={busy !== null}>
-      <h3>Máy được giao: {machineLabel ?? 'Máy của bạn'}</h3>
-      <p>Thời gian còn lại: <strong role="timer" aria-label="Thời gian giữ máy còn lại">{countdown}</strong></p>
+    <section className="panel panel-hold" aria-label="Lượt giữ máy của bạn" aria-busy={busy !== null}>
+      <div className="panel-head">
+        <h3>Máy được giao: {machineLabel ?? 'Máy của bạn'}</h3>
+        <span className="pill pill-warn">Giữ lượt 8 phút</span>
+      </div>
+      <p className="countdown-box">Thời gian còn lại: <strong role="timer" aria-label="Thời gian giữ máy còn lại">{countdown}</strong></p>
       <p className="muted-note">Hạn 8 phút tính ngay từ lúc giao máy. Đóng trang có thể khiến bạn bỏ lỡ lượt và không được tự gia hạn.</p>
       <p className="muted-note">Chỉ xác nhận khi đã kiểm tra máy tại chỗ: máy đã dừng và đồ cũ đã được lấy hoặc bàn giao. Xác nhận này không tự bắt đầu giặt hay gia hạn lượt.</p>
       {expired && <p role="status">{invalidDeadline ? 'Không đọc được hạn giữ máy.' : 'Đã tới hạn hiển thị.'} Đang cần trạng thái mới từ máy chủ; không khởi động máy khi chưa xác minh quyền sử dụng.</p>}
-      {notice && <p role="status">{notice}</p>}
+      {notice && <p className="alert alert-ok" role="status">{notice}</p>}
       {error && <p className="alert alert-error" role="alert">{error}</p>}
-      <div>
+      <div className="queue-actions">
         <button type="button" className="btn btn-primary" disabled={disabled || verified} onClick={() => void act('confirm-check')}>
           {busy === 'confirm-check' ? 'Đang xác nhận…' : verified ? 'Đã ghi nhận kiểm tra' : 'Tôi đã kiểm tra máy tại chỗ'}
         </button>{' '}

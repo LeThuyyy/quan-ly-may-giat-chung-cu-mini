@@ -121,13 +121,16 @@ function ScopedQueuePanel({ buildingId, accountId, entries, participation, onRef
 
   return (
     <section className="panel" aria-label="Hàng đợi của tòa" aria-busy={busy}>
-      <h3>Hàng đợi chung</h3>
+      <div className="panel-head">
+        <h3>Hàng đợi chung</h3>
+        <button type="button" className="btn btn-outline btn-sm" disabled={busy} onClick={() => void refresh()}>Tải lại trạng thái</button>
+      </div>
       <p className="muted-note">Người chưa sẵn sàng giữ vị trí nhưng được bỏ qua khi giao máy. Vị trí không phải cam kết giờ nhận máy.</p>
       {ordered.length === 0 ? <p>Chưa có người đang chờ.</p> : (
-        <ol>
+        <ol className="queue-list">
           {ordered.map((entry) => (
-            <li key={entry.id} aria-current={entry.accountId === accountId ? 'true' : undefined}>
-              {entry.displayName}{entry.accountId === accountId ? ' (Bạn)' : ''} — {entry.ready ? 'Sẵn sàng nhận máy' : 'Chưa sẵn sàng'}
+            <li key={entry.id} className={entry.accountId === accountId ? 'queue-row me' : 'queue-row'} aria-current={entry.accountId === accountId ? 'true' : undefined}>
+              <span className="queue-row-main"><strong>{entry.displayName}{entry.accountId === accountId ? ' (Bạn)' : ''}</strong></span><span className="visually-hidden"> — </span><span className={entry.ready ? 'pill pill-ready' : 'pill pill-wait'}>{entry.ready ? 'Sẵn sàng nhận máy' : 'Chưa sẵn sàng'}</span>
             </li>
           ))}
         </ol>
@@ -135,25 +138,26 @@ function ScopedQueuePanel({ buildingId, accountId, entries, participation, onRef
       {consistent && participation === 'WAITING' && own && (
         <>
           <p>Vị trí của bạn: <strong>{ownIndex + 1}</strong>. Người sẵn sàng phía trước: <strong>{ordered.slice(0, ownIndex).filter((entry) => entry.ready).length}</strong>.</p>
-          <button type="button" className="btn btn-primary" disabled={disabled} onClick={() => void mutate('PATCH', !own.ready)}>
-            {own.ready ? 'Chuyển sang Chưa sẵn sàng' : 'Bật Sẵn sàng nhận máy'}
-          </button>{' '}
-          <button type="button" className="btn btn-danger" disabled={disabled} onClick={() => void mutate('DELETE')}>Rời hàng</button>
+          <div className="queue-actions">
+            <button type="button" className="btn btn-primary" disabled={disabled} onClick={() => void mutate('PATCH', !own.ready)}>
+              {own.ready ? 'Chuyển sang Chưa sẵn sàng' : 'Bật Sẵn sàng nhận máy'}
+            </button>{' '}
+            <button type="button" className="btn btn-danger" disabled={disabled} onClick={() => void mutate('DELETE')}>Rời hàng</button>
+          </div>
         </>
       )}
       {consistent && participation === 'NONE' && (
-        <>
+        <div className="queue-actions">
           <button type="button" className="btn btn-primary" disabled={disabled} onClick={() => void mutate('POST', true)}>Vào hàng — Sẵn sàng</button>{' '}
           <button type="button" className="btn btn-outline" disabled={disabled} onClick={() => void mutate('POST', false)}>Vào hàng — Chưa sẵn sàng</button>
-        </>
+        </div>
       )}
       {participation === 'HELD' && consistent && <p>Bạn đã được giao máy. Hãy dùng thẻ giữ máy để xác nhận kiểm tra hoặc nhường lượt; không thể tắt Sẵn sàng hay rời hàng ở đây.</p>}
       {participation === 'WASHING' && consistent && <p>Bạn còn yêu cầu giặt chưa hoàn tất. Hoàn tất giặt và bàn giao trước khi vào hàng lại.</p>}
       {(!consistent || participation === 'UNKNOWN') && <p role="status">Chưa xác minh được yêu cầu hiện tại. Hãy tải lại trạng thái; chưa thể thao tác hàng đợi.</p>}
       <p className="muted-note">Chỉ bật Sẵn sàng khi có thể nhận máy trong 8 phút bất cứ lúc nào. Đóng trang có thể làm bạn bỏ lỡ lượt, không tự tắt Sẵn sàng hoặc gia hạn.</p>
-      {notice && <p role="status">{notice}</p>}
+      {notice && <p className="alert alert-ok" role="status">{notice}</p>}
       {error && <p role="alert" className="alert alert-error">{error}</p>}
-      <button type="button" className="btn btn-outline" disabled={busy} onClick={() => void refresh()}>Tải lại trạng thái</button>
     </section>
   );
 }

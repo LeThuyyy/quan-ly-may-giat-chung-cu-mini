@@ -99,7 +99,7 @@ export default function WashCycleCard({ buildingId, cycles, machineLabels, onRef
     finally { setBusy(false); }
   }
 
-  return <section className="panel" aria-label="Mẻ giặt của tôi">
+  return <section className="panel panel-washing" aria-label="Mẻ giặt của tôi">
     <h3>Mẻ giặt của bạn</h3>
     {cycles.map(c => {
       const remaining = now === null ? null : Math.max(0, Math.ceil((Date.parse(c.estimatedEndAt) - now) / 1000));

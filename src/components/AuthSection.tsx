@@ -42,7 +42,12 @@ export default function AuthSection({
         <p className="lead">
           Đăng nhập bằng phiên bảo mật qua máy chủ Java. Tạo tòa (1–30 máy), mời cư dân, xếp hàng minh bạch và giữ lượt 8 phút.
         </p>
-        <p className="muted-note">
+        <ul className="hero-points">
+          <li><strong>Bật/tắt Sẵn sàng linh hoạt:</strong> Giữ nguyên vị trí trong hàng khi chưa thể lên máy ngay.</li>
+          <li><strong>Kiểm tra thực tế tại máy:</strong> Giữ lượt 8 phút từ lúc được giao; đồng hồ web về 0 không tự coi máy đã dừng.</li>
+          <li><strong>Đầy đủ luồng vận hành:</strong> Theo dõi mẻ giặt, bàn giao đồ, ước tính ETA, đổi lượt và trò chuyện theo tòa.</li>
+        </ul>
+        <p className="muted-note" style={{ marginTop: 14, marginBottom: 0 }}>
           Lưu ý: Đóng trang hoặc tắt thông báo không tự gia hạn thời gian giữ lượt 8 phút.
         </p>
       </div>
@@ -81,6 +86,7 @@ export default function AuthSection({
             onChange={(e) => setUsername(e.target.value)}
             placeholder="vd: phong302"
             autoComplete="username"
+            spellCheck={false}
           />
         </label>
 

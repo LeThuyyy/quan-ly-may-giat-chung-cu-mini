@@ -75,29 +75,38 @@ function SwapScope({ buildingId, accountId, entries, refreshKey = 0, onRefresh, 
   const statusNames: Record<string,string> = { PENDING: 'Chờ trả lời', ACCEPTED: 'Đã đổi', REJECTED: 'Từ chối', CANCELLED: 'Đã hủy', EXPIRED: 'Hết hạn', INVALIDATED: 'Mất hiệu lực' };
   const outgoingIds = new Set(outgoing.map(s => s.id));
   function row(s: Swap) {
-    return <li key={s.id}>{names.get(s.senderId) ?? 'Người gửi'} → {names.get(s.recipientId) ?? 'Người nhận'} · {statusNames[s.status] ?? s.status} · hạn {new Date(s.expiresAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}
-      {s.status === 'PENDING' && (s.senderId === accountId ? <button disabled={disabled} onClick={() => void run('cancel',s.id)}>Hủy lời mời</button> : <><button disabled={disabled} onClick={() => void run('accept',s.id)}>Đồng ý đổi lượt</button><button disabled={disabled} onClick={() => void run('reject',s.id)}>Từ chối đổi lượt</button></>)}
+    return <li className="queue-row" key={s.id}>
+      <span>{names.get(s.senderId) ?? 'Người gửi'} → {names.get(s.recipientId) ?? 'Người nhận'} · {statusNames[s.status] ?? s.status} · hạn {new Date(s.expiresAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}</span>
+      {s.status === 'PENDING' && (s.senderId === accountId ? <button type="button" className="btn btn-danger btn-sm" disabled={disabled} onClick={() => void run('cancel',s.id)}>Hủy lời mời</button> : <div className="action-row"><button type="button" className="btn btn-primary btn-sm" disabled={disabled} onClick={() => void run('accept',s.id)}>Đồng ý đổi lượt</button><button type="button" className="btn btn-danger btn-sm" disabled={disabled} onClick={() => void run('reject',s.id)}>Từ chối đổi lượt</button></div>)}
     </li>;
   }
   return <section className="panel" aria-label="Đổi lượt trong hàng">
-    <h3>Đổi lượt</h3><p>Chỉ đổi đúng hai vị trí đang chờ, không đổi Sẵn sàng. Lời mời có hiệu lực 10 phút; nhận máy hoặc rời hàng làm lời mời mất hiệu lực.</p>
-    {targets.length > 0 && <><label>Người phía sau<select value={selected} disabled={disabled || hasOutgoing} onChange={e => setSelected(e.target.value)}>
-      <option value="">Chọn người đổi lượt</option>{targets.map(e => <option key={e.id} value={e.id}>{e.displayName} · vị trí {sorted.indexOf(e)+1}</option>)}
-    </select></label><p>Bạn ở vị trí {ownIndex+1}; đồng ý sẽ hoán đổi với vị trí {selected ? sorted.findIndex(e=>e.id===selected)+1 : 'được chọn'}.</p>
-      <button type="button" disabled={disabled || hasOutgoing || !targets.some(e=>e.id===selected)} onClick={() => void run('create')}>Gửi lời mời đổi lượt</button></>}
-    {hasOutgoing && <p>Bạn đã có một lời mời đang chờ.</p>}
-    <section aria-label="Lời mời bạn đã gửi đang chờ"><h4>Lời mời bạn đã gửi đang chờ</h4>
-      {outgoing.length ? <ul>{outgoing.map(row)}</ul> : <p>Không có lời mời gửi đang chờ.</p>}
+    <div className="panel-head">
+      <h3>Đổi lượt</h3>
+      <button type="button" className="btn btn-outline btn-sm" disabled={busy} onClick={() => void run()}>Tải lại lời mời</button>
+    </div>
+    <p className="muted-note">Chỉ đổi đúng hai vị trí đang chờ, không đổi Sẵn sàng. Lời mời có hiệu lực 10 phút; nhận máy hoặc rời hàng làm lời mời mất hiệu lực.</p>
+    {targets.length > 0 && <div className="swap-subpanel">
+      <label className="field"><span>Người phía sau</span><select value={selected} disabled={disabled || hasOutgoing} onChange={e => setSelected(e.target.value)}>
+        <option value="">Chọn người đổi lượt</option>{targets.map(e => <option key={e.id} value={e.id}>{e.displayName} · vị trí {sorted.indexOf(e)+1}</option>)}
+      </select></label>
+      <p className="muted-note">Bạn ở vị trí {ownIndex+1}; đồng ý sẽ hoán đổi với vị trí {selected ? sorted.findIndex(e=>e.id===selected)+1 : 'được chọn'}.</p>
+      <button type="button" className="btn btn-primary" disabled={disabled || hasOutgoing || !targets.some(e=>e.id===selected)} onClick={() => void run('create')}>Gửi lời mời đổi lượt</button>
+    </div>}
+    {hasOutgoing && <p className="muted-note">Bạn đã có một lời mời đang chờ.</p>}
+    <section className="swap-subpanel" aria-label="Lời mời bạn đã gửi đang chờ"><h4>Lời mời bạn đã gửi đang chờ</h4>
+      {outgoing.length ? <ul className="queue-list">{outgoing.map(row)}</ul> : <p className="muted-note">Không có lời mời gửi đang chờ.</p>}
     </section>
-    {error && <p role="alert">{error}</p>}
-    <button type="button" disabled={busy} onClick={() => void run()}>Tải lại lời mời</button>{' '}
-    <button type="button" disabled={disabled} aria-pressed={view === 'pending'} onClick={() => void run(undefined, undefined, 'pending', 0)}>Lời mời đang chờ</button>{' '}
-    <button type="button" disabled={disabled} aria-pressed={view === 'history'} onClick={() => void run(undefined, undefined, 'history', 0)}>Lịch sử đổi lượt</button>
-    <ul>{swaps.filter(s => !outgoingIds.has(s.id)).map(row)}</ul>
-    <div aria-label="Phân trang lời mời">
-      <button type="button" disabled={disabled || page === 0} onClick={() => void run(undefined, undefined, view, page - 1)}>Trang lời mời trước</button>
+    {error && <p className="alert alert-error" role="alert">{error}</p>}
+    <div className="action-row">
+      <button type="button" className="btn btn-outline btn-sm" disabled={disabled} aria-pressed={view === 'pending'} onClick={() => void run(undefined, undefined, 'pending', 0)}>Lời mời đang chờ</button>{' '}
+      <button type="button" className="btn btn-outline btn-sm" disabled={disabled} aria-pressed={view === 'history'} onClick={() => void run(undefined, undefined, 'history', 0)}>Lịch sử đổi lượt</button>
+    </div>
+    <ul className="queue-list">{swaps.filter(s => !outgoingIds.has(s.id)).map(row)}</ul>
+    <div className="action-row" aria-label="Phân trang lời mời">
+      <button type="button" className="btn btn-outline btn-sm" disabled={disabled || page === 0} onClick={() => void run(undefined, undefined, view, page - 1)}>Trang lời mời trước</button>
       <span>Trang {page + 1}</span>
-      <button type="button" disabled={disabled || !hasNext} onClick={() => void run(undefined, undefined, view, page + 1)}>Trang lời mời sau</button>
+      <button type="button" className="btn btn-outline btn-sm" disabled={disabled || !hasNext} onClick={() => void run(undefined, undefined, view, page + 1)}>Trang lời mời sau</button>
     </div>
   </section>;
 }

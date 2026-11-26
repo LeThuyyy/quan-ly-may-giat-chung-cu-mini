@@ -36,16 +36,20 @@ function EstimatePanel({ buildingId, refreshKey = 0, onSessionExpired }: { build
     return () => { active = false; abort.abort(); };
   }, [buildingId, refreshKey, version]);
   return <section className="panel" aria-label="Ước tính tới lượt">
-    <h3>Ước tính tới lượt</h3>
-    {busy && <p role="status">Đang tải ước tính…</p>}
-    {error && <p role="alert">{error}</p>}
+    <div className="panel-head">
+      <h3>Ước tính tới lượt</h3>
+      <button type="button" className="btn btn-outline btn-sm" disabled={busy} onClick={() => setVersion(v => v + 1)}>Tải lại ước tính</button>
+    </div>
+    {busy && <p className="muted-note" role="status">Đang tải ước tính…</p>}
+    {error && <p className="alert alert-error" role="alert">{error}</p>}
     {estimate && <>
-      <p>{estimate.reason}</p>
-      {estimate.rank !== null && <p>Vị trí chờ: {estimate.rank}. Người sẵn sàng phía trước: {estimate.readyAhead}.</p>}
-      {estimate.state === 'READY' && estimate.rangeStart && estimate.rangeEnd && <p>Dự kiến: {time(estimate.rangeStart)} – {time(estimate.rangeEnd)} (giờ Việt Nam).</p>}
-      <ul>{estimate.assumptions.map(a => <li key={a}>{a}</li>)}</ul>
-      <small>Cập nhật từ máy chủ: {time(estimate.serverNow)}</small>
+      <div className={estimate.state === 'READY' ? 'eta-callout eta-callout-ready' : 'eta-callout'}>
+        <p><strong>{estimate.reason}</strong></p>
+        {estimate.rank !== null && <p>Vị trí chờ: <strong>{estimate.rank}</strong>. Người sẵn sàng phía trước: <strong>{estimate.readyAhead}</strong>.</p>}
+        {estimate.state === 'READY' && estimate.rangeStart && estimate.rangeEnd && <p>Dự kiến: <strong>{time(estimate.rangeStart)} – {time(estimate.rangeEnd)}</strong> (giờ Việt Nam).</p>}
+      </div>
+      <ul className="assumptions-list">{estimate.assumptions.map(a => <li key={a}>{a}</li>)}</ul>
+      <small className="muted-note">Cập nhật từ máy chủ: {time(estimate.serverNow)}</small>
     </>}
-    <button type="button" disabled={busy} onClick={() => setVersion(v => v + 1)}>Tải lại ước tính</button>
   </section>;
 }

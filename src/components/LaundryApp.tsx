@@ -717,7 +717,7 @@ export default function LaundryApp() {
         />
       ) : (
         <section className="workspace">
-          <aside className="sidebar">
+          <div className="sidebar-buildings">
             <div className="panel">
               <h2>Tòa nhà của bạn</h2>
               {buildings.length === 0 ? (
@@ -745,7 +745,9 @@ export default function LaundryApp() {
                 </ul>
               )}
             </div>
+          </div>
 
+          <aside className="sidebar-forms">
             <form className="panel" onSubmit={handleCreateBuilding}>
               <h3>Tạo tòa mới (Quản lý)</h3>
               <label className="field">
@@ -826,12 +828,40 @@ export default function LaundryApp() {
                     <h2>{buildingDetail.name}</h2>
                     <button
                       type="button"
-                      className="btn btn-outline"
+                      className="btn btn-outline btn-sm"
                       onClick={() => void loadBuildingDetail(selectedSummary).catch(() => {})}
                       disabled={busy}
                     >
                       Làm mới
                     </button>
+                  </div>
+                  <div className="status-strip" aria-label="Tóm tắt trạng thái">
+                    <div className="status-metric">
+                      <span className="status-metric-label">Vai trò tại tòa</span>
+                      <span className="status-metric-value">
+                        {selectedSummary.role === 'MANAGER' ? 'Quản lý tòa nhà' : 'Cư dân đã duyệt'}
+                      </span>
+                    </div>
+                    <div className="status-metric">
+                      <span className="status-metric-label">Lượt giặt của bạn</span>
+                      <span className="status-metric-value">
+                        {isSyncStale || participation === 'UNKNOWN'
+                          ? 'Cần tải lại trạng thái'
+                          : participation === 'HELD'
+                            ? 'Đã được giao máy (giữ 8 phút)'
+                            : participation === 'WASHING'
+                              ? 'Đang có mẻ giặt chưa hoàn tất'
+                              : participation === 'WAITING'
+                                ? 'Đang xếp hàng chờ máy'
+                                : 'Chưa vào hàng đợi'}
+                      </span>
+                    </div>
+                    <div className="status-metric">
+                      <span className="status-metric-label">Tổng quan máy &amp; hàng</span>
+                      <span className="status-metric-value">
+                        {buildingDetail.machines.filter((m) => m.status === 'AVAILABLE').length}/{buildingDetail.machines.length} máy mở · {buildingDetail.queue.length} người chờ
+                      </span>
+                    </div>
                   </div>
                   <p className="muted-note">
                     Thời gian dự kiến chỉ mang tính tham khảo, không chứng minh máy đã dừng. Luôn kiểm tra thực tế tại máy trước khi sử dụng.
@@ -843,7 +873,7 @@ export default function LaundryApp() {
                   )}
                 </div>
 
-                <nav aria-label="Mục tòa nhà">
+                <nav className="section-nav" aria-label="Mục tòa nhà">
                   <button type="button" className="btn btn-outline" aria-pressed={section === 'laundry'} onClick={() => setSection('laundry')}>Giặt và hàng đợi</button>{' '}
                   <button type="button" className="btn btn-outline" aria-pressed={section === 'chat'} onClick={() => setSection('chat')}>Trò chuyện</button>
                 </nav>
@@ -902,16 +932,26 @@ export default function LaundryApp() {
                   <div className="machine-grid">
                     {buildingDetail.machines.map((m) => (
                       <div key={m.id} className="machine-card">
-                        <strong><Link href={`/buildings/${selectedSummary.id}/machines/${m.id}`}>{m.label} · Chi tiết/QR</Link></strong>
-                        <span className={m.status === 'AVAILABLE' ? 'pill pill-ready' : 'pill pill-maint'}>
-                          {m.status === 'AVAILABLE'
-                            ? 'Đang mở'
-                            : m.status === 'RUNNING'
-                              ? 'Đang giặt'
-                              : m.status === 'NEEDS_CHECK'
-                                ? 'Cần kiểm tra'
-                                : 'Bảo trì'}
-                        </span>
+                        <div className="machine-card-head">
+                          <strong><Link className="machine-card-link" href={`/buildings/${selectedSummary.id}/machines/${m.id}`}>{m.label} · Chi tiết/QR</Link></strong>
+                          <span className={
+                            m.status === 'AVAILABLE'
+                              ? 'pill pill-ready'
+                              : m.status === 'RUNNING'
+                                ? 'pill pill-running'
+                                : m.status === 'NEEDS_CHECK'
+                                  ? 'pill pill-warn'
+                                  : 'pill pill-maint'
+                          }>
+                            {m.status === 'AVAILABLE'
+                              ? 'Đang mở'
+                              : m.status === 'RUNNING'
+                                ? 'Đang giặt'
+                                : m.status === 'NEEDS_CHECK'
+                                  ? 'Cần kiểm tra'
+                                  : 'Bảo trì'}
+                          </span>
+                        </div>
                         {selectedSummary.role === 'MANAGER' && (
                           <div className="queue-actions">
                             <button

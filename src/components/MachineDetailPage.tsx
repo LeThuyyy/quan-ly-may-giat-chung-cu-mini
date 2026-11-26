@@ -97,17 +97,32 @@ function MachinePage({ buildingId, machineId }: { buildingId: string; machineId:
     finally { authBusy.current = false; setBusy(false); }
   }
   return <main className="shell">
-    <Link href="/">Về danh sách tòa</Link>
-    <h1>Chi tiết máy giặt</h1>
-    <p>Trang máy không xác nhận máy đã dừng hay trống đồ. Luôn kiểm tra tại chỗ trước thao tác.</p>
-    {error && <p role="alert">{error}</p>}
-    {!checked ? <p role="status">Đang kiểm tra phiên…</p> : !account ? <AuthSection busy={busy}
+    <header className="topbar">
+      <span className="mark" aria-hidden="true">◉</span>
+      <span>GIẶT CHUNG CƯ</span>
+      <div className="topbar-user">
+        <Link className="btn btn-outline btn-sm" href="/">Về danh sách tòa</Link>
+        <button type="button" className="btn btn-outline btn-sm" onClick={() => void refresh()}>Tải lại trạng thái máy</button>
+      </div>
+    </header>
+    <div className="panel" style={{ marginBottom: 16 }}>
+      <h1>Chi tiết máy giặt</h1>
+      <p className="muted-note">Trang máy không xác nhận máy đã dừng hay trống đồ. Luôn kiểm tra tại chỗ trước thao tác.</p>
+      {error && <p className="alert alert-error" role="alert">{error}</p>}
+      {!checked && <p className="muted-note" role="status">Đang kiểm tra phiên…</p>}
+    </div>
+    {checked && !account ? <AuthSection busy={busy}
       onLogin={async (username, password) => { await auth('login', { username, password }); }}
       onRegister={(username, displayName, password) => auth('register', { username, displayName, password })}
       onClearMessages={() => setError('')} /> : null}
-    <button type="button" onClick={() => void refresh()}>Tải lại trạng thái máy</button>
     {account && detail && membership && <section className="panel">
-      <h2>{detail.label}</h2><p>Trạng thái hệ thống: {STATUS_LABELS[detail.status] ?? detail.status} ({detail.status} · không phải xác minh vật lý).</p>
+      <div className="panel-head">
+        <h2>{detail.label}</h2>
+        <span className={detail.status === 'AVAILABLE' ? 'pill pill-ready' : detail.status === 'RUNNING' ? 'pill pill-running' : detail.status === 'NEEDS_CHECK' ? 'pill pill-warn' : 'pill pill-maint'}>
+          {STATUS_LABELS[detail.status] ?? detail.status}
+        </span>
+      </div>
+      <p className="muted-note">Trạng thái hệ thống: {STATUS_LABELS[detail.status] ?? detail.status} ({detail.status} · không phải xác minh vật lý).</p>
       <MachineQrButton buildingId={buildingId} machineId={machineId} onSessionExpired={expired} />
       <MachineHoldCard buildingId={buildingId} accountId={account.id} hold={detail.ownHold} machineLabel={detail.label} serverNow={detail.serverNow} onRefresh={() => refresh()} onSessionExpired={expired} />
       {detail.ownHold && <WashHoldActions key={detail.ownHold.id} buildingId={buildingId} hold={detail.ownHold} handover={detail.previousCycle} serverNow={detail.serverNow} onRefresh={() => refresh()} onSessionExpired={expired} />}

@@ -94,29 +94,38 @@ function ChatScope({ buildingId, isManager = false, onSessionExpired }: ChatPane
     // Keep UUID and draft for deliberate idempotent retries; editing starts a new message.
     void run({ path: `${base}/messages`, payload: { clientRequestId: requestId.current, body: draft.trim() } }, 0);
   }
-  return <section aria-label="Trò chuyện tòa nhà">
-    <h2>Trò chuyện tòa nhà</h2>
-    <p>Tin nhắn văn bản được lưu 30 ngày. Báo cáo không tự động ẩn tin nhắn.</p>
-    {error && <p role="alert">{error}</p>}
-    <button disabled={busy} onClick={() => void run()}>Tải lại trò chuyện</button>
-    <ul>{messages.map(message => <li key={message.id}>
-      <strong>{message.displayName}</strong> <time dateTime={message.sentAt}>{new Date(message.sentAt).toLocaleString('vi-VN')}</time>
+  return <section className="panel" aria-label="Trò chuyện tòa nhà">
+    <div className="panel-head">
+      <h2>Trò chuyện tòa nhà</h2>
+      <button type="button" className="btn btn-outline btn-sm" disabled={busy} onClick={() => void run()}>Tải lại trò chuyện</button>
+    </div>
+    <p className="muted-note">Tin nhắn văn bản được lưu 30 ngày. Báo cáo không tự động ẩn tin nhắn.</p>
+    {error && <p className="alert alert-error" role="alert">{error}</p>}
+    <ul className="chat-list">{messages.map(message => <li className="chat-item" key={message.id}>
+      <div className="chat-item-head">
+        <strong>{message.displayName}</strong>
+        <time dateTime={message.sentAt}>{new Date(message.sentAt).toLocaleString('vi-VN')}</time>
+      </div>
       <p style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{message.hiddenAt ? 'Tin nhắn đã bị ẩn.' : message.body}</p>
-      {!message.hiddenAt && <>
-        <button disabled={disabled} onClick={() => void run({ path: `${base}/messages/${message.id}/report`, payload: { reasonCode: reason } })}>Báo cáo tin nhắn của {message.displayName}</button>
-        {isManager && <button disabled={disabled} onClick={() => void run({ path: `${base}/messages/${message.id}/hide`, payload: { reasonCode: reason } })}>Ẩn tin nhắn của {message.displayName}</button>}
-      </>}
+      {!message.hiddenAt && <div className="action-row">
+        <button type="button" className="btn btn-outline btn-sm" disabled={disabled} onClick={() => void run({ path: `${base}/messages/${message.id}/report`, payload: { reasonCode: reason } })}>Báo cáo tin nhắn của {message.displayName}</button>
+        {isManager && <button type="button" className="btn btn-danger btn-sm" disabled={disabled} onClick={() => void run({ path: `${base}/messages/${message.id}/hide`, payload: { reasonCode: reason } })}>Ẩn tin nhắn của {message.displayName}</button>}
+      </div>}
     </li>)}</ul>
-    <label>Lý do báo cáo / ẩn <select value={reason} onChange={event => setReason(event.target.value)} disabled={disabled}>
+    <label className="field">Lý do báo cáo / ẩn <select value={reason} onChange={event => setReason(event.target.value)} disabled={disabled}>
       <option value="SPAM">Spam</option><option value="ABUSE">Lạm dụng</option><option value="OTHER">Khác</option>
     </select></label>
-    {isManager && <section aria-label="Báo cáo tin nhắn"><h3>Báo cáo</h3><ul>{reports.map(report => <li key={report.id}>
-      Tin {report.messageId} — {report.reasonCode}
-      <button disabled={disabled} onClick={() => void run({ path: `${base}/messages/${report.messageId}/hide`, payload: { reasonCode: reason } })}>Ẩn tin được báo cáo</button>
+    {isManager && <section className="swap-subpanel" aria-label="Báo cáo tin nhắn"><h3>Báo cáo</h3><ul className="queue-list">{reports.map(report => <li className="queue-row" key={report.id}>
+      <span>Tin {report.messageId} — {report.reasonCode}</span>
+      <button type="button" className="btn btn-danger btn-sm" disabled={disabled} onClick={() => void run({ path: `${base}/messages/${report.messageId}/hide`, payload: { reasonCode: reason } })}>Ẩn tin được báo cáo</button>
     </li>)}</ul></section>}
-    <button disabled={busy || page === 0} onClick={() => void run(undefined, page - 1)}>Trang trước</button>
-    <button disabled={busy || !hasNext} onClick={() => void run(undefined, page + 1)}>Trang sau</button>
-    <label>Tin nhắn <textarea value={draft} maxLength={1000} disabled={mutating || blocked} onChange={event => { setDraft(event.target.value); requestId.current = null; }} /></label>
-    <button disabled={disabled || !draft.trim()} onClick={send}>Gửi tin nhắn</button>
+    <div className="action-row">
+      <button type="button" className="btn btn-outline btn-sm" disabled={busy || page === 0} onClick={() => void run(undefined, page - 1)}>Trang trước</button>
+      <button type="button" className="btn btn-outline btn-sm" disabled={busy || !hasNext} onClick={() => void run(undefined, page + 1)}>Trang sau</button>
+    </div>
+    <div className="chat-composer">
+      <label className="field">Tin nhắn <textarea value={draft} maxLength={1000} disabled={mutating || blocked} placeholder="Nhập nội dung trao đổi chung trong tòa…" onChange={event => { setDraft(event.target.value); requestId.current = null; }} /></label>
+      <button type="button" className="btn btn-primary" disabled={disabled || !draft.trim()} onClick={send}>Gửi tin nhắn</button>
+    </div>
   </section>;
 }
