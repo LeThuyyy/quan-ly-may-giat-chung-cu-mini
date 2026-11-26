@@ -201,4 +201,18 @@ describe('MachineHoldCard', () => {
     expect(screen.getByRole('button', { name: 'Nhường lượt' }).hasAttribute('disabled')).toBe(true);
     expect(config.onRefresh).toHaveBeenCalledTimes(1);
   });
+
+  it('compensates for client clock skew when serverNow is provided', async () => {
+    // Client device clock is 5 minutes ahead of server (past the 10:08 deadline locally,
+    // while serverNow is still 10:05:00Z, leaving 3 minutes of valid hold).
+    vi.setSystemTime(new Date('2026-11-21T10:10:00Z'));
+    fetchMock.mockResolvedValue(new Response(null, { status: 200 }));
+    const config = props({ serverNow: '2026-11-21T10:05:00Z' });
+    render(<MachineHoldCard {...config} />);
+    await tick();
+    expect(screen.getByRole('timer').textContent).toBe('03:00');
+    expect(screen.getByRole('button', { name: 'Tôi đã kiểm tra máy tại chỗ' }).hasAttribute('disabled')).toBe(false);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Tôi đã kiểm tra máy tại chỗ' })); });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });

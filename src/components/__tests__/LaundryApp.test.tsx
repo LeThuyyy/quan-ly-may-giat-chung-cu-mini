@@ -75,12 +75,12 @@ describe('LaundryApp integration', () => {
                 return jsonResponse(null);
             }
             if (url === '/api/buildings/b-1/members/pending') {
-                return jsonResponse([{ accountId: 'res-2', username: 'resident2', displayName: 'Cư dân 2' }]);
+                return jsonResponse([{ id: 'res-2', username: 'resident2', displayName: 'Cư dân 2' }]);
             }
             if (url === '/api/buildings/b-1/members') {
                 return jsonResponse([
-                    { accountId: 'mgr-1', username: 'manager1', displayName: 'Quản lý 1', role: 'MANAGER' },
-                    { accountId: 'res-1', username: 'resident1', displayName: 'Cư dân 1', role: 'RESIDENT' },
+                    { id: 'mgr-1', username: 'manager1', displayName: 'Quản lý 1', role: 'MANAGER', status: 'APPROVED' },
+                    { id: 'res-1', username: 'resident1', displayName: 'Cư dân 1', role: 'RESIDENT', status: 'APPROVED' },
                 ]);
             }
             return jsonResponse({ error: 'Unexpected URL: ' + url }, 404);
@@ -153,7 +153,7 @@ describe('LaundryApp integration', () => {
             }
             if (url === '/api/buildings/b-1/members') {
                 return jsonResponse([
-                    { accountId: 'mgr-1', username: 'manager1', displayName: 'Quản lý 1', role: 'MANAGER' },
+                    { id: 'mgr-1', username: 'manager1', displayName: 'Quản lý 1', role: 'MANAGER', status: 'APPROVED' },
                 ]);
             }
             return jsonResponse({ error: 'Unexpected URL: ' + url }, 404);
@@ -228,8 +228,8 @@ describe('LaundryApp integration', () => {
             if (url === '/api/buildings/b-1/members') {
                 if (currentRole !== 'MANAGER') return jsonResponse({ error: 'Forbidden' }, 403);
                 return jsonResponse([
-                    { accountId: 'mgr-1', username: 'manager1', displayName: 'Quản lý 1', role: 'MANAGER' },
-                    { accountId: 'mgr-2', username: 'manager2', displayName: 'Quản lý 2', role: 'MANAGER' },
+                    { id: 'mgr-1', username: 'manager1', displayName: 'Quản lý 1', role: 'MANAGER', status: 'APPROVED' },
+                    { id: 'mgr-2', username: 'manager2', displayName: 'Quản lý 2', role: 'MANAGER', status: 'APPROVED' },
                 ]);
             }
             return jsonResponse({ error: 'Unexpected URL: ' + url }, 404);

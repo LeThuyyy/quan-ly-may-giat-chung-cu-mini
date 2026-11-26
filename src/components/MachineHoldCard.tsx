@@ -17,6 +17,8 @@ export interface MachineHoldCardProps {
   /** Latest server snapshot for this building. Never reuse another building's data. */
   hold: MachineHoldView | null;
   machineLabel?: string;
+  /** Optional server timestamp from the same snapshot to compensate for client clock skew. */
+  serverNow?: string;
   /** Parent owns fetching/polling. Must refresh holds AND building/queue state. */
   onRefresh: () => void | Promise<void>;
   onSessionExpired: () => void;
@@ -30,8 +32,10 @@ export default function MachineHoldCard(props: MachineHoldCardProps) {
 }
 
 function ActiveHoldCard({
-  buildingId, hold, machineLabel, onRefresh, onSessionExpired,
+  buildingId, hold, machineLabel, serverNow, onRefresh, onSessionExpired,
 }: MachineHoldCardProps & { hold: MachineHoldView }) {
+  const clockOffsetRef = useRef<number>(0);
+  const currentServerMs = () => Date.now() + clockOffsetRef.current;
   const [now, setNow] = useState<number | null>(null);
   const [busy, setBusy] = useState<'confirm-check' | 'yield' | null>(null);
   const [checked, setChecked] = useState(false);
@@ -52,12 +56,17 @@ function ActiveHoldCard({
   const verified = checked || hold.physicallyChecked === true;
 
   useEffect(() => {
+    const parsed = serverNow ? Date.parse(serverNow) : NaN;
+    clockOffsetRef.current = Number.isFinite(parsed) ? parsed - Date.now() : 0;
+  }, [serverNow]);
+
+  useEffect(() => {
     callbacks.current = { onRefresh, onSessionExpired };
   }, [onRefresh, onSessionExpired]);
 
   useEffect(() => {
     mounted.current = true;
-    const timer = window.setInterval(() => setNow(Date.now()), 250);
+    const timer = window.setInterval(() => setNow(Date.now() + clockOffsetRef.current), 250);
     return () => {
       mounted.current = false;
       window.clearInterval(timer);
@@ -87,7 +96,7 @@ function ActiveHoldCard({
 
   async function act(action: 'confirm-check' | 'yield') {
     // Recheck the clock on click; a background tab can have throttled timers.
-    if (inFlight.current || disabled || Date.now() >= deadline) return;
+    if (inFlight.current || disabled || currentServerMs() >= deadline) return;
     inFlight.current = true;
     setBusy(action);
     setError(null);

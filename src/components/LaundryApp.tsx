@@ -111,8 +111,9 @@ export default function LaundryApp() {
   const [holds, setHolds] = useState<MachineHoldView[]>([]);
   const [holdsVerified, setHoldsVerified] = useState(false);
   const [myCycles, setMyCycles] = useState<WashCycleView[] | null>(null);
-  const [issues, setIssues] = useState<WashCycleView[] | null>(null);
+  const [issues, setIssues] = useState<WashCycleView[] | null>([]);
   const [holdHandover, setHoldHandover] = useState<WashCycleView | null | undefined>(undefined);
+  const [serverNow, setServerNow] = useState<string | undefined>(undefined);
   const [participation, setParticipation] = useState<QueueParticipation>('UNKNOWN');
   const [verifiedHoldId, setVerifiedHoldId] = useState<string | null>(null);
 
@@ -149,8 +150,9 @@ export default function LaundryApp() {
     setHolds([]);
     setHoldsVerified(false);
     setMyCycles(null);
-    setIssues(null);
+    setIssues([]);
     setHoldHandover(undefined);
+    setServerNow(undefined);
     setParticipation('UNKNOWN');
     setVerifiedHoldId(null);
     setDetailError(null);
@@ -269,6 +271,7 @@ export default function LaundryApp() {
         }
         setMyCycles(mineRes.data);
         setHoldHandover(undefined);
+        setServerNow(snapshot?.serverNow);
 
         const nextHolds = holdsRes.data!;
         setHolds(nextHolds);
@@ -852,6 +855,7 @@ export default function LaundryApp() {
                   accountId={account.id}
                   hold={myHold}
                   machineLabel={buildingDetail.machines.find((machine) => machine.id === myHold?.machineId)?.label}
+                  serverNow={serverNow}
                   onRefresh={refreshSelectedBuilding}
                   onSessionExpired={handleSessionExpired}
                 />
@@ -861,6 +865,7 @@ export default function LaundryApp() {
                   buildingId={selectedSummary.id}
                   hold={myHold}
                   handover={holdHandover}
+                  serverNow={serverNow}
                   onRefresh={refreshSelectedBuilding}
                   onSessionExpired={handleSessionExpired}
                 />}

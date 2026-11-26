@@ -50,6 +50,7 @@ class MachineDetailEtaIntegrationTest {
         assertNull(detail.get(target.getUsername(),b.getId(),m.id()).ownHold());
         assertNull(detail.get(target.getUsername(),b.getId(),m.id()).previousCycle());
         assertNotNull(detail.get(a.getUsername(),b.getId(),m.id()).ownHold());
+        assertEquals(NOW,detail.get(a.getUsername(),b.getId(),m.id()).serverNow());
         assertEquals(hc,holds.count());assertEquals(qc,queue.count());
         assertEquals(1,allocation.activeHolds(manager.getUsername(),b.getId()).size());
         assertThrows(ResponseStatusException.class,() -> eta.me(account().getUsername(),b.getId()));
@@ -72,5 +73,34 @@ class MachineDetailEtaIntegrationTest {
         assertEquals("UNAVAILABLE",eta.me(a.getUsername(),b.getId()).state());
         assertTrue(allocation.activeHolds(manager.getUsername(),b.getId()).isEmpty());
         assertEquals(1,laundry.view(a.getUsername(),b.getId()).queue().size());
+    }
+
+    @Test void multiMachineEtaExcludesMaintenanceAndSimulatesParallelSlots() {
+        Account manager = account();
+        var b = laundry.createBuilding(manager.getUsername(), "MultiMachine", 3);
+        var machines = laundry.view(manager.getUsername(), b.getId()).machines();
+        // Machine 1: confirmed free and started by resident1 for 20 minutes
+        Account r1 = resident(b), r2 = resident(b), rUnready = resident(b), rTarget = resident(b);
+        laundry.join(r1.getUsername(), b.getId(), true);
+        laundry.confirmMachineFree(manager.getUsername(), b.getId(), machines.get(0).id());
+        var hold1 = allocation.activeHolds(manager.getUsername(), b.getId()).getFirst();
+        allocation.confirmPhysicalCheck(r1.getUsername(), b.getId(), hold1.id());
+        allocation.start(r1.getUsername(), b.getId(), hold1.id(), 20, WashCycle.HandoverMode.ALLOW_TRANSFER);
+        // Machine 2: marked maintenance (must be excluded from ETA)
+        laundry.setMaintenance(manager.getUsername(), b.getId(), machines.get(1).id(), true);
+        // Machine 3: confirmed free and held by r2
+        laundry.join(r2.getUsername(), b.getId(), true);
+        laundry.confirmMachineFree(manager.getUsername(), b.getId(), machines.get(2).id());
+        // rUnready joins unready (ahead of rTarget in queue, but not readyAhead)
+        laundry.join(rUnready.getUsername(), b.getId(), false);
+        laundry.join(rTarget.getUsername(), b.getId(), true);
+
+        var estimate = eta.me(rTarget.getUsername(), b.getId());
+        assertEquals("READY", estimate.state());
+        assertEquals(2, estimate.rank());
+        assertEquals(0, estimate.readyAhead());
+        // Earliest slot among Machine 1 (NOW + 20m) and Machine 3 (held: NOW + 50m..55m+8m) is Machine 1 at NOW + 20m
+        assertEquals(NOW.plusSeconds(20 * 60), estimate.rangeStart());
+        assertEquals(NOW.plusSeconds(20 * 60), estimate.rangeEnd());
     }
 }

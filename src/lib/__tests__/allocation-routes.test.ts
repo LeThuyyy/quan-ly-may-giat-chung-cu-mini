@@ -4,6 +4,7 @@ import { callJavaWithSession } from '../java-bridge';
 import { GET } from '../../app/api/buildings/[id]/holds/route';
 import { POST as yieldHold } from '../../app/api/buildings/[id]/holds/[holdId]/yield/route';
 import { POST as confirmCheck } from '../../app/api/buildings/[id]/holds/[holdId]/confirm-check/route';
+import { POST as reportUnusable } from '../../app/api/buildings/[id]/holds/[holdId]/unusable/route';
 import { POST as confirmFree } from '../../app/api/buildings/[id]/machines/[machineId]/confirm-free/route';
 
 vi.mock('../java-bridge', () => ({ callJavaWithSession: vi.fn() }));
@@ -36,6 +37,13 @@ const mutations = [
     name: 'confirm-check',
     path: `/api/buildings/${buildingId}/holds/${resourceId}/confirm-check`,
     invoke: (req: NextRequest, id = buildingId, child = resourceId) => confirmCheck(req, {
+      params: Promise.resolve({ id, holdId: child }),
+    }),
+  },
+  {
+    name: 'unusable',
+    path: `/api/buildings/${buildingId}/holds/${resourceId}/unusable`,
+    invoke: (req: NextRequest, id = buildingId, child = resourceId) => reportUnusable(req, {
       params: Promise.resolve({ id, holdId: child }),
     }),
   },

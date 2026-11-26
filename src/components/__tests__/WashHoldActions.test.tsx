@@ -75,4 +75,29 @@ describe('WashHoldActions deadline checks', () => {
     config.unmount();
     expect(vi.getTimerCount()).toBe(0);
   });
+
+  it('reports an empty assigned machine as unusable and refreshes queue state', async () => {
+    fetchMock.mockResolvedValue(new Response(null, { status: 200 }));
+    const config = view({ ...hold, physicallyChecked: false });
+    await tick();
+    const reportBtn = screen.getByRole('button', { name: 'Báo máy chưa dùng được' });
+    expect(reportBtn.hasAttribute('disabled')).toBe(false);
+    await act(async () => { fireEvent.click(reportBtn); });
+    expect(fetchMock).toHaveBeenCalledWith('/api/buildings/building-a/holds/hold-a/unusable',
+      expect.objectContaining({ method: 'POST', cache: 'no-store' }));
+    expect(fetchMock.mock.calls[0][1]?.body).toBeUndefined();
+    expect(config.onRefresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('compensates for client clock skew when serverNow is provided', async () => {
+    vi.setSystemTime(new Date('2026-11-24T10:12:00Z'));
+    fetchMock.mockResolvedValue(new Response(null, { status: 200 }));
+    const onRefresh = vi.fn().mockResolvedValue(undefined);
+    render(<WashHoldActions buildingId="building-a" hold={hold} handover={null}
+      serverNow="2026-11-24T10:04:00Z" onRefresh={onRefresh} onSessionExpired={vi.fn()} />);
+    await tick();
+    expect(startButton().hasAttribute('disabled')).toBe(false);
+    await act(async () => { fireEvent.click(startButton()); });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });

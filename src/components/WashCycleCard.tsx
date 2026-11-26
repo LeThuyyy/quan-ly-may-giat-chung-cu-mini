@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useScopedActions } from '@/lib/use-scoped-actions';
 
 export type HandoverMode = 'ALLOW_TRANSFER' | 'SELF_PICKUP';
@@ -44,9 +44,16 @@ export default function WashCycleCard({ buildingId, cycles, machineLabels, onRef
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [ownerMinutes, setOwnerMinutes] = useState(10);
+  const clockOffsetRef = useRef<number>(0);
 
   useEffect(() => {
-    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    const firstServerNow = cycles?.[0]?.serverNow;
+    const parsed = firstServerNow ? Date.parse(firstServerNow) : NaN;
+    clockOffsetRef.current = Number.isFinite(parsed) ? parsed - Date.now() : 0;
+  }, [cycles]);
+
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now() + clockOffsetRef.current), 1000);
     return () => window.clearInterval(id);
   }, []);
 

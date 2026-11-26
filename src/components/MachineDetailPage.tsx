@@ -7,8 +7,14 @@ import WashHoldActions from './WashHoldActions';
 import WashCycleCard, { type WashCycleView } from './WashCycleCard';
 import MachineQrButton from './MachineQrButton';
 
-interface Detail { id: string; label: string; status: string; ownHold: MachineHoldView | null; ownCycles: WashCycleView[]; previousCycle: WashCycleView | null }
+interface Detail { id: string; label: string; status: string; ownHold: MachineHoldView | null; ownCycles: WashCycleView[]; previousCycle: WashCycleView | null; serverNow?: string }
 interface Membership { id: string; role: string; status: string }
+const STATUS_LABELS: Record<string, string> = {
+  AVAILABLE: 'Đang mở',
+  RUNNING: 'Đang giặt',
+  NEEDS_CHECK: 'Cần kiểm tra',
+  MAINTENANCE: 'Bảo trì',
+};
 export default function MachineDetailPage(props: { buildingId: string; machineId: string }) {
   return <MachinePage key={`${props.buildingId}:${props.machineId}`} {...props} />;
 }
@@ -22,9 +28,11 @@ function MachinePage({ buildingId, machineId }: { buildingId: string; machineId:
   const sequence = useRef(0);
   const authBusy = useRef(false);
   const expired = useCallback(() => { sequence.current++; setAccount(null); setDetail(null); setMembership(null); setChecked(true); }, []);
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (options?: { silent?: boolean }) => {
     const request = ++sequence.current;
-    setDetail(null); setMembership(null); setError('');
+    if (!options?.silent) {
+      setDetail(null); setMembership(null); setError('');
+    }
     try {
       const [me, buildings, machine] = await Promise.all([
         fetch('/api/me', { cache: 'no-store' }), fetch('/api/buildings', { cache: 'no-store' }),
@@ -37,8 +45,13 @@ function MachinePage({ buildingId, machineId }: { buildingId: string; machineId:
       if (request !== sequence.current) return;
       const member = list.find(b => b.id === buildingId && b.status === 'APPROVED');
       if (!member) throw new Error('Bạn chưa được duyệt trong tòa này.');
-      setAccount(a); setMembership(member); setDetail(d);
-    } catch (e) { if (request === sequence.current) setError(e instanceof Error ? e.message : 'Không tải được máy.'); }
+      setAccount(a); setMembership(member); setDetail(d); setError('');
+    } catch (e) {
+      if (request === sequence.current) {
+        setDetail(null); setMembership(null);
+        setError(e instanceof Error ? e.message : 'Không tải được máy.');
+      }
+    }
     finally { if (request === sequence.current) setChecked(true); }
   }, [buildingId, machineId, expired]);
   useEffect(() => {
@@ -47,6 +60,31 @@ function MachinePage({ buildingId, machineId }: { buildingId: string; machineId:
     void Promise.resolve().then(() => { if (active) return refresh(); });
     return () => { active = false; invalidate(); };
   }, [refresh]);
+  useEffect(() => {
+    if (!account || !membership || membership.status !== 'APPROVED') return;
+    let active = true;
+    let running = false;
+    let timer: number;
+    const tick = async () => {
+      if (!active || running) return;
+      window.clearTimeout(timer);
+      running = true;
+      try {
+        if (document.visibilityState === 'visible') await refresh({ silent: true });
+      } finally {
+        running = false;
+        if (active) timer = window.setTimeout(() => void tick(), 5000);
+      }
+    };
+    timer = window.setTimeout(() => void tick(), 5000);
+    const onVisibility = () => { if (document.visibilityState === 'visible') void tick(); };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [account, membership, refresh]);
   async function auth(path: 'login' | 'register', payload: object) {
     if (authBusy.current) return false;
     authBusy.current = true; setBusy(true); setError('');
@@ -69,11 +107,11 @@ function MachinePage({ buildingId, machineId }: { buildingId: string; machineId:
       onClearMessages={() => setError('')} /> : null}
     <button type="button" onClick={() => void refresh()}>Tải lại trạng thái máy</button>
     {account && detail && membership && <section className="panel">
-      <h2>{detail.label}</h2><p>Trạng thái hệ thống: {detail.status} (không phải xác minh vật lý).</p>
+      <h2>{detail.label}</h2><p>Trạng thái hệ thống: {STATUS_LABELS[detail.status] ?? detail.status} ({detail.status} · không phải xác minh vật lý).</p>
       <MachineQrButton buildingId={buildingId} machineId={machineId} onSessionExpired={expired} />
-      <MachineHoldCard buildingId={buildingId} accountId={account.id} hold={detail.ownHold} machineLabel={detail.label} onRefresh={refresh} onSessionExpired={expired} />
-      {detail.ownHold && <WashHoldActions key={detail.ownHold.id} buildingId={buildingId} hold={detail.ownHold} handover={detail.previousCycle} onRefresh={refresh} onSessionExpired={expired} />}
-      <WashCycleCard buildingId={buildingId} cycles={detail.ownCycles} machineLabels={{ [machineId]: detail.label }} onRefresh={refresh} onSessionExpired={expired} />
+      <MachineHoldCard buildingId={buildingId} accountId={account.id} hold={detail.ownHold} machineLabel={detail.label} serverNow={detail.serverNow} onRefresh={() => refresh()} onSessionExpired={expired} />
+      {detail.ownHold && <WashHoldActions key={detail.ownHold.id} buildingId={buildingId} hold={detail.ownHold} handover={detail.previousCycle} serverNow={detail.serverNow} onRefresh={() => refresh()} onSessionExpired={expired} />}
+      <WashCycleCard buildingId={buildingId} cycles={detail.ownCycles} machineLabels={{ [machineId]: detail.label }} onRefresh={() => refresh()} onSessionExpired={expired} />
     </section>}
   </main>;
 }

@@ -128,4 +128,41 @@ class QueueSwapTest{
         assertTrue(Set.of(QueueSwapRequest.Status.ACCEPTED,QueueSwapRequest.Status.INVALIDATED).contains(rows.findById(invite.id()).orElseThrow().getStatus()));
         assertEquals(3,laundry.view(f.owner.getUsername(),b).queue().size());
     }
+
+    @Test void acceptRacingMemberRemovalSerializesSafelyUnderBuildingLock() throws Exception {
+        var f = setup();
+        UUID b = f.building.getId();
+        var invite = swaps.create(f.users.get(0).getUsername(), b, f.entries.get(2).getId());
+        CountDownLatch ready = new CountDownLatch(2), start = new CountDownLatch(1);
+        var workers = Executors.newFixedThreadPool(2);
+        try {
+            var acceptWorker = workers.submit(() -> {
+                ready.countDown();
+                start.await();
+                try {
+                    swaps.respond(f.users.get(2).getUsername(), b, invite.id(), "accept");
+                } catch (ResponseStatusException e) {
+                    assertTrue(Set.of(HttpStatus.CONFLICT, HttpStatus.FORBIDDEN).contains(e.getStatusCode()));
+                }
+                return null;
+            });
+            var removeWorker = workers.submit(() -> {
+                ready.countDown();
+                start.await();
+                admin.remove(f.owner.getUsername(), b, f.users.get(0).getId());
+                return null;
+            });
+            assertTrue(ready.await(5, TimeUnit.SECONDS));
+            start.countDown();
+            acceptWorker.get(10, TimeUnit.SECONDS);
+            removeWorker.get(10, TimeUnit.SECONDS);
+        } finally {
+            start.countDown();
+            workers.shutdownNow();
+            assertTrue(workers.awaitTermination(5, TimeUnit.SECONDS));
+        }
+        assertEquals(Membership.Status.REMOVED, members.findByBuilding_IdAndAccount_Id(b, f.users.get(0).getId()).orElseThrow().getStatus());
+        assertEquals(QueueEntry.State.LEFT, queue.findById(f.entries.get(0).getId()).orElseThrow().getState());
+        assertNotEquals(QueueSwapRequest.Status.PENDING, rows.findById(invite.id()).orElseThrow().getStatus());
+    }
 }

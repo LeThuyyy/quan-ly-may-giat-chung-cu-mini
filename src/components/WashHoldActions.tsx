@@ -1,19 +1,23 @@
 'use client';
 
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useEffect, useRef, useState } from 'react';
 import { useScopedActions } from '@/lib/use-scoped-actions';
 import type { MachineHoldView } from './MachineHoldCard';
 import type { HandoverMode, WashCycleView } from './WashCycleCard';
 
-export default function WashHoldActions({ buildingId, hold, handover, onRefresh, onSessionExpired }: {
+export default function WashHoldActions({ buildingId, hold, handover, serverNow, onRefresh, onSessionExpired }: {
   buildingId: string;
   hold: MachineHoldView;
   /** undefined: load failed/unknown; null: verified no old cycle */
   handover: WashCycleView | null | undefined;
+  /** Optional server timestamp from snapshot to compensate for client clock skew. */
+  serverNow?: string;
   onRefresh: () => Promise<void>;
   onSessionExpired: () => void;
 }) {
   const { scopedFetch, refresh, sessionExpired } = useScopedActions(onRefresh, onSessionExpired);
+  const clockOffsetRef = useRef<number>(0);
+  const currentServerMs = () => Date.now() + clockOffsetRef.current;
   const [minutes, setMinutes] = useState(45);
   const [mode, setMode] = useState<HandoverMode>('ALLOW_TRANSFER');
   const [remaining, setRemaining] = useState('');
@@ -27,7 +31,12 @@ export default function WashHoldActions({ buildingId, hold, handover, onRefresh,
   const expired = now === null || !Number.isFinite(deadline) || now >= deadline;
 
   useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 250);
+    const parsed = serverNow ? Date.parse(serverNow) : NaN;
+    clockOffsetRef.current = Number.isFinite(parsed) ? parsed - Date.now() : 0;
+  }, [serverNow]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now() + clockOffsetRef.current), 250);
     return () => window.clearInterval(timer);
   }, []);
 
@@ -35,12 +44,12 @@ export default function WashHoldActions({ buildingId, hold, handover, onRefresh,
 
   async function mutate(path: string, payload: unknown, success: string) {
     // Background tabs may throttle the timer; check the current clock again on click.
-    if (busy || uncertain || expired || Date.now() >= deadline) return;
+    if (busy || uncertain || expired || currentServerMs() >= deadline) return;
     setBusy(true); setError(null); setNotice(null);
     try {
       const response = await scopedFetch(`/api/buildings/${buildingId}/${path}`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, cache: 'no-store',
-        body: JSON.stringify(payload),
+        method: 'POST', cache: 'no-store',
+        ...(payload === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }),
       });
       if (response.status === 401) { sessionExpired(); return; }
       if (!response.ok) {
@@ -100,7 +109,17 @@ export default function WashHoldActions({ buildingId, hold, handover, onRefresh,
         </label>
         <p className="muted-note">Mỗi người tự mang và đặt chậu riêng cạnh máy. Giờ dự kiến không thay thế kiểm tra thực tế.</p>
         {!hold.physicallyChecked && <p role="status">Bạn chưa xác nhận kiểm tra tại máy.</p>}
-        <button type="submit" className="btn btn-primary" disabled={!canStart}>Bắt đầu giặt</button>
+        <div className="queue-actions">
+          <button type="submit" className="btn btn-primary" disabled={!canStart}>Bắt đầu giặt</button>
+          <button
+            type="button"
+            className="btn btn-danger"
+            disabled={busy || uncertain || expired}
+            onClick={() => void mutate(`holds/${hold.id}/unusable`, undefined, 'Đã ghi nhận báo máy chưa dùng được; lượt giữ được khôi phục về hàng.')}
+          >
+            Báo máy chưa dùng được
+          </button>
+        </div>
       </form>
     </>}
     {notice && <p role="status">{notice}</p>}
