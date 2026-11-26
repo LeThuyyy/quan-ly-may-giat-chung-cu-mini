@@ -61,6 +61,18 @@ public class QueueSwapService {
         Account actor=access.require(username,buildingId,false);PageView.validate(page,size);
         return PageView.from(swaps.related(buildingId,actor.getId(),PageRequest.of(page,size,Sort.by(Sort.Order.desc("createdAt"),Sort.Order.desc("id")))),this::view);
     }
+    @Transactional(readOnly=true)
+    public PageView<SwapView> pending(String username,UUID buildingId,int page,int size){
+        Account actor=access.require(username,buildingId,false);PageView.validate(page,size);
+        return PageView.from(swaps.pendingRelated(buildingId,actor.getId(),QueueSwapRequest.Status.PENDING,clock.instant(),
+            PageRequest.of(page,size,Sort.by(Sort.Order.asc("createdAt"),Sort.Order.asc("id")))),this::view);
+    }
+    @Transactional(readOnly=true)
+    public java.util.List<SwapView> outgoing(String username,UUID buildingId){
+        Account actor=access.require(username,buildingId,false);
+        return swaps.findByBuildingIdAndSenderIdAndStatusAndExpiresAtGreaterThan(buildingId,actor.getId(),QueueSwapRequest.Status.PENDING,clock.instant())
+            .stream().map(this::view).toList();
+    }
     private SwapView view(QueueSwapRequest swap){return new SwapView(swap.getId(),swap.getSenderId(),swap.getRecipientId(),swap.getSenderEntryId(),swap.getRecipientEntryId(),swap.getCreatedAt(),swap.getExpiresAt(),swap.effectiveStatus(clock.instant()),clock.instant());}
     @Scheduled(fixedDelay=15000) @Transactional
     public void expire(){for(UUID buildingId:swaps.expiredBuildings(QueueSwapRequest.Status.PENDING,clock.instant())){lock(buildingId);lifecycle.reconcile(buildingId);}}

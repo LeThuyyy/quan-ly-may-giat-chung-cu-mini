@@ -15,6 +15,13 @@ public class QueueSwapController{
         @RequestParam(defaultValue="0")int page,@RequestParam(defaultValue="20")int size,HttpServletResponse response){
         response.setHeader("Cache-Control","private, no-store");return swaps.list(auth.getName(),id,page,size);
     }
+    @GetMapping("/pending") public PageView<QueueSwapService.SwapView> pending(Authentication auth,@PathVariable UUID id,
+        @RequestParam(defaultValue="0")int page,@RequestParam(defaultValue="20")int size,HttpServletResponse response){
+        response.setHeader("Cache-Control","private, no-store");return swaps.pending(auth.getName(),id,page,size);
+    }
+    @GetMapping("/outgoing") public java.util.List<QueueSwapService.SwapView> outgoing(Authentication auth,@PathVariable UUID id,HttpServletResponse response){
+        response.setHeader("Cache-Control","private, no-store");return swaps.outgoing(auth.getName(),id);
+    }
     public record Create(@NotNull UUID recipientEntryId){}
     @PostMapping public QueueSwapService.SwapView create(Authentication auth,@PathVariable UUID id,@Valid @RequestBody Create request){return swaps.create(auth.getName(),id,request.recipientEntryId());}
     @PostMapping("/{swapId}/accept") public QueueSwapService.SwapView accept(Authentication auth,@PathVariable UUID id,@PathVariable UUID swapId){return swaps.respond(auth.getName(),id,swapId,"accept");}

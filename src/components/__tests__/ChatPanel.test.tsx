@@ -6,7 +6,7 @@ const fetchMock = vi.fn<typeof fetch>();
 const message = { id: 'm', authorId: 'a', displayName: 'Alice', body: '<img src=x onerror=alert(1)> **text**', sentAt: '2026-11-25T00:00:00Z', hiddenAt: null };
 const page = (items = [message]) => new Response(JSON.stringify({ items, page: 0, size: 30, hasNext: false }), { status: 200 });
 beforeEach(() => { vi.stubGlobal('fetch', fetchMock); fetchMock.mockReset(); fetchMock.mockImplementation(async () => page()); });
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 async function ready() { await waitFor(() => expect(screen.getByRole('button', { name: 'Gửi tin nhắn' }).hasAttribute('disabled')).toBe(true)); await screen.findByText('Alice'); }
 async function click(name: string) { await act(async () => { fireEvent.click(screen.getByRole('button', { name })); }); }
 it('renders plain escaped text without manager controls', async () => {
@@ -38,6 +38,32 @@ it('aborts old scope when changing buildings and ignores late content', async ()
   view.rerender(<ChatPanel buildingId="new" accountId="a" onSessionExpired={vi.fn()} />);await ready();
   expect(signal.aborted).toBe(true);
   await act(async () => finish(page([{ ...message, body: 'old secret' }])));expect(screen.queryByText('old secret')).toBeNull();
+});
+it('keeps draft focus and text editable throughout a slow automatic poll', async () => {
+  vi.useFakeTimers();
+  render(<ChatPanel buildingId="b" accountId="a" onSessionExpired={vi.fn()} />);
+  await act(async () => { await Promise.resolve(); });
+  const input = screen.getByRole('textbox', { name: 'Tin nhắn' }) as HTMLTextAreaElement;
+  input.focus(); fireEvent.change(input, { target: { value: 'đang soạn' } });
+  let finish!: (response: Response) => void;
+  fetchMock.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  await act(async () => { vi.advanceTimersByTime(5000); });
+  expect(input.disabled).toBe(false); expect(document.activeElement).toBe(input);
+  fireEvent.change(input, { target: { value: 'đang soạn tiếp' } });
+  expect(input.value).toBe('đang soạn tiếp');
+  expect(screen.getByRole('button', { name: 'Gửi tin nhắn' }).hasAttribute('disabled')).toBe(true);
+  await act(async () => { finish(page()); });
+  expect(input.value).toBe('đang soạn tiếp'); expect(document.activeElement).toBe(input);
+  expect(screen.getByRole('button', { name: 'Gửi tin nhắn' }).hasAttribute('disabled')).toBe(false);
+});
+it('blocks the composer after a failed background poll without erasing its draft', async () => {
+  vi.useFakeTimers();render(<ChatPanel buildingId="b" accountId="a" onSessionExpired={vi.fn()} />);
+  await act(async () => { await Promise.resolve(); });
+  const input = screen.getByRole('textbox', { name: 'Tin nhắn' }) as HTMLTextAreaElement;
+  fireEvent.change(input, { target: { value: 'giữ nội dung này' } });
+  fetchMock.mockResolvedValueOnce(new Response('{}', { status: 502 }));
+  await act(async () => { vi.advanceTimersByTime(5000); });
+  expect(input.disabled).toBe(true);expect(input.value).toBe('giữ nội dung này');expect(screen.getByRole('alert')).toBeTruthy();
 });
 it('manager gets reports and can hide with an allowlisted reason', async () => {
   fetchMock.mockImplementation(async url => String(url).includes('/reports') ? page([]) : page());

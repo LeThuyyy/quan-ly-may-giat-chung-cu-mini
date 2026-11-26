@@ -20,6 +20,7 @@ function ChatScope({ buildingId, isManager = false, onSessionExpired }: ChatPane
   const [reason, setReason] = useState('SPAM');
   const [blocked, setBlocked] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [mutating, setMutating] = useState(false);
   const [error, setError] = useState('');
   const mounted = useRef(false);
   const inFlight = useRef(false);
@@ -46,7 +47,8 @@ function ChatScope({ buildingId, isManager = false, onSessionExpired }: ChatPane
   }
   async function run(action?: { path: string; payload: object }, targetPage = page) {
     if (!mounted.current || inFlight.current || document.hidden) return;
-    inFlight.current = true; setBusy(true); setBlocked(true);
+    inFlight.current = true; setBusy(true);
+    if (action) { setBlocked(true); setMutating(true); }
     const scope = new AbortController(); controller.current = scope;
     try {
       if (action) {
@@ -57,9 +59,12 @@ function ChatScope({ buildingId, isManager = false, onSessionExpired }: ChatPane
       }
       await load(targetPage, scope.signal);
     } catch (cause) {
-      if (mounted.current && !scope.signal.aborted) setError(cause instanceof Error ? cause.message : 'Không thể tải tin nhắn.');
+      if (mounted.current && !scope.signal.aborted) {
+        setBlocked(true);
+        setError(cause instanceof Error ? cause.message : 'Không thể tải tin nhắn.');
+      }
     } finally {
-      if (mounted.current && controller.current === scope) { inFlight.current = false; setBusy(false); }
+      if (mounted.current && controller.current === scope) { inFlight.current = false; setBusy(false); setMutating(false); }
     }
   }
   useEffect(() => { poll.current = () => run(); });
@@ -111,7 +116,7 @@ function ChatScope({ buildingId, isManager = false, onSessionExpired }: ChatPane
     </li>)}</ul></section>}
     <button disabled={busy || page === 0} onClick={() => void run(undefined, page - 1)}>Trang trước</button>
     <button disabled={busy || !hasNext} onClick={() => void run(undefined, page + 1)}>Trang sau</button>
-    <label>Tin nhắn <textarea value={draft} maxLength={1000} disabled={disabled} onChange={event => { setDraft(event.target.value); requestId.current = null; }} /></label>
+    <label>Tin nhắn <textarea value={draft} maxLength={1000} disabled={mutating || blocked} onChange={event => { setDraft(event.target.value); requestId.current = null; }} /></label>
     <button disabled={disabled || !draft.trim()} onClick={send}>Gửi tin nhắn</button>
   </section>;
 }

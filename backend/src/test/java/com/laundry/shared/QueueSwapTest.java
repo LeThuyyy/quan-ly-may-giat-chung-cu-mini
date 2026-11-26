@@ -53,6 +53,27 @@ class QueueSwapTest{
         var another=swaps.create(f.users.get(0).getUsername(),b,f.entries.get(3).getId());swaps.respond(f.users.get(3).getUsername(),b,another.id(),"reject");
         assertEquals(QueueSwapRequest.Status.REJECTED,rows.findById(another.id()).orElseThrow().getStatus());
     }
+    @Test void pendingOutgoingRemainsAccessibleBeyondFiftyNewerHistoryAndInboxRows(){
+        var f=setup();UUID b=f.building.getId();Account actor=f.users.get(1);
+        var sent=swaps.create(actor.getUsername(),b,f.entries.get(3).getId());
+        for(int i=0;i<55;i++){
+            clock.time=clock.time.plusSeconds(1);
+            var incoming=swaps.create(f.users.get(0).getUsername(),b,f.entries.get(1).getId());
+            swaps.respond(actor.getUsername(),b,incoming.id(),"reject");
+        }
+        clock.time=clock.time.plusSeconds(1);
+        var newer=swaps.create(f.users.get(0).getUsername(),b,f.entries.get(1).getId());
+        assertFalse(swaps.list(actor.getUsername(),b,0,50).items().stream().anyMatch(s->s.id().equals(sent.id())));
+        assertEquals(sent.id(),swaps.outgoing(actor.getUsername(),b).getFirst().id());
+        assertEquals(sent.id(),swaps.pending(actor.getUsername(),b,0,1).items().getFirst().id());
+        assertTrue(swaps.pending(actor.getUsername(),b,0,1).hasNext());
+        assertEquals(newer.id(),swaps.pending(actor.getUsername(),b,1,1).items().getFirst().id());
+        Account outsider=user();assertThrows(ResponseStatusException.class,()->swaps.outgoing(outsider.getUsername(),b));
+        clock.time=sent.expiresAt();
+        assertTrue(swaps.outgoing(actor.getUsername(),b).isEmpty());
+        assertEquals(newer.id(),swaps.pending(actor.getUsername(),b,0,20).items().getFirst().id());
+        assertEquals(QueueSwapRequest.Status.PENDING,rows.findById(sent.id()).orElseThrow().getStatus());
+    }
     @Test void exactDeadlineExpiresWithoutGetMutationAndAllowsNewInvitation(){
         var f=setup();UUID b=f.building.getId();var invite=swaps.create(f.users.get(0).getUsername(),b,f.entries.get(3).getId());
         clock.time=invite.expiresAt();
