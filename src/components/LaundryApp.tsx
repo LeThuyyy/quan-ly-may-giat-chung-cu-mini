@@ -150,6 +150,7 @@ export default function LaundryApp({ initialBuildingId, initialView }: LaundryAp
   const selectedRole = selectedSummary?.role;
   const selectedStatus = selectedSummary?.status;
   const detailRequestId = useRef(0);
+  const activeManualRefreshCount = useRef(0);
   const buildingDetailFor = useRef<string | null>(null);
 
   const navigate = useCallback(
@@ -245,8 +246,15 @@ export default function LaundryApp({ initialBuildingId, initialView }: LaundryAp
 
   const loadBuildingDetail = useCallback(
     async (summary: BuildingSummary | null, options?: { silent?: boolean }) => {
+      if (options?.silent && activeManualRefreshCount.current > 0) {
+        return;
+      }
+      if (!options?.silent) {
+        activeManualRefreshCount.current += 1;
+      }
       const requestId = ++detailRequestId.current;
       if (!summary || summary.status !== 'APPROVED') {
+        if (!options?.silent) activeManualRefreshCount.current = Math.max(0, activeManualRefreshCount.current - 1);
         resetBuildingSnapshot();
         throw new Error('Building membership is not approved');
       }
@@ -444,6 +452,10 @@ export default function LaundryApp({ initialBuildingId, initialView }: LaundryAp
           }
         }
         throw err;
+      } finally {
+        if (!options?.silent) {
+          activeManualRefreshCount.current = Math.max(0, activeManualRefreshCount.current - 1);
+        }
       }
     },
     [clearManagerState, handleSessionExpired, resetBuildingSnapshot],

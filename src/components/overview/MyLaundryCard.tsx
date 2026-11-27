@@ -68,8 +68,9 @@ export default function MyLaundryCard({
     if (busy || isSyncStale) return;
     setBusy(true);
     setError(null);
+    let response: Response;
     try {
-      const response = await fetch(`/api/buildings/${buildingId}/queue${method === 'POST' ? '' : '/me'}`, {
+      response = await fetch(`/api/buildings/${buildingId}/queue${method === 'POST' ? '' : '/me'}`, {
         method,
         cache: 'no-store',
         ...(ready === undefined
@@ -79,6 +80,13 @@ export default function MyLaundryCard({
               body: JSON.stringify({ ready }),
             }),
       });
+    } catch {
+      setError('Mất kết nối, chưa rõ thao tác đã được ghi nhận hay chưa. Hãy thử làm mới.');
+      setBusy(false);
+      return;
+    }
+
+    try {
       if (response.status === 401) {
         onSessionExpired();
         return;
@@ -93,9 +101,14 @@ export default function MyLaundryCard({
         return;
       }
       setConfirmLeaveOpen(false);
-      await onRefresh();
-    } catch {
-      setError('Mất kết nối, chưa rõ thao tác đã được ghi nhận hay chưa. Hãy thử làm mới.');
+      try {
+        await onRefresh();
+      } catch (refreshErr) {
+        if (refreshErr instanceof Error && refreshErr.message === 'Refresh scope was replaced') {
+          return;
+        }
+        setError('Đã ghi nhận thao tác nhưng chưa tải lại được trạng thái mới. Hãy bấm Làm mới.');
+      }
     } finally {
       setBusy(false);
     }
@@ -208,7 +221,9 @@ export default function MyLaundryCard({
 
         <p className="muted-note">
           {own.ready
-            ? 'Khi tới lượt, hệ thống giao máy và bắt đầu đếm hạn giữ lượt 8 phút. Đóng trang không tự gia hạn hoặc tạm dừng lượt.'
+            ? readyAhead === 0
+              ? 'Bạn đang đứng đầu lượt nhận máy. Hệ thống sẽ tự giao máy ngay khi có máy được xác nhận trống hoặc hoàn tất bàn giao (hạn giữ lượt 8 phút; đóng trang không tự gia hạn).'
+              : 'Khi tới lượt, hệ thống giao máy và bắt đầu đếm hạn giữ lượt 8 phút. Đóng trang không tự gia hạn hoặc tạm dừng lượt.'
             : 'Khi chưa sẵn sàng, bạn vẫn giữ nguyên vị trí hiện tại nhưng sẽ được bỏ qua khi có máy trống.'}
         </p>
 
