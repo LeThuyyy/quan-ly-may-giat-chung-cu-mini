@@ -39,6 +39,12 @@ export interface QueueMeResponse {
   serverNow: string;
 }
 
+export interface SnapshotNotificationFacts {
+  incomingSwaps: Array<{ id: string; status: string }>;
+  outgoingResponses: Array<{ id: string; status: string }>;
+  latestHold: { id: string; status: string; expiresAt: string } | null;
+}
+
 export interface OperationalSnapshot {
   building: BuildingView;
   membership: BuildingSummary;
@@ -47,6 +53,7 @@ export interface OperationalSnapshot {
   myCycles: WashCycleView[];
   previousCycle: WashCycleView | null;
   eta?: QueueEstimateView;
+  notifications?: SnapshotNotificationFacts;
   serverNow: string;
 }
 

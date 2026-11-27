@@ -1,3 +1,8 @@
+.operational-notifications { margin-bottom: 16px; border: 1px solid var(--border-subtle); border-radius: 12px; background: var(--surface); padding: 12px; }
+.operational-notifications ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; }
+.operational-notifications li { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.operational-notifications li > span { flex: 1 1 240px; overflow-wrap: anywhere; }
+
 :root {
   /* Reusable SaaS Design Tokens */
   --primary: #106b54;

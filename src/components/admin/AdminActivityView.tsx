@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { HistoryIcon } from '@/components/Icons';
 import EmptyState from '@/components/ui/EmptyState';
+import { activityStateLabel } from '@/lib/activity-labels';
 
 interface Activity {
   id: string;
@@ -159,7 +160,7 @@ export default function AdminActivityView({
         ) : (
           <ul className="activity-timeline">
             {items.map((item) => {
-              const label = ACTION_LABELS[item.action] ?? item.action;
+              const label = ACTION_LABELS[item.action] ?? 'Hoạt động khác';
               const machineLabel = item.machineId ? machineLabels[item.machineId] : null;
               return (
                 <li key={item.id} className="activity-row">
@@ -168,11 +169,15 @@ export default function AdminActivityView({
                     <div className="muted-note" style={{ margin: '2px 0 0' }}>
                       {machineLabel ? `Máy: ${machineLabel} · ` : ''}
                       {item.beforeState || item.afterState
-                        ? `Trạng thái: ${item.beforeState ?? '—'} → ${item.afterState ?? '—'}`
+                        ? `Trạng thái: ${activityStateLabel(item.beforeState)} → ${activityStateLabel(item.afterState)}`
                         : item.actorId
                           ? `Mã người thực hiện: ${item.actorId.slice(0, 8)}...`
                           : 'Hệ thống tự động'}
                     </div>
+                    <details><summary>Chi tiết kỹ thuật</summary><p className="muted-note" style={{ overflowWrap: 'anywhere' }}>
+                      {item.action} · {item.beforeState ?? '—'} → {item.afterState ?? '—'}<br />
+                      Người thực hiện: {item.actorId ?? 'Hệ thống'} · Đối tượng: {item.targetId ?? '—'}
+                    </p></details>
                   </div>
                   <time className="activity-time" dateTime={item.occurredAt}>
                     {formatTime(item.occurredAt)}

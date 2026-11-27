@@ -3,6 +3,7 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: 'Giặt chung cư',
+  icons: { icon: '/icon.svg' },
   description: 'Xem trạng thái máy giặt và hàng đợi trong tòa nhà.',
 };
 

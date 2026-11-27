@@ -7,6 +7,7 @@ const files = [
   'README.md',
   'CONTRIBUTING.md',
   'docs/mo-rong-nghiep-vu.md',
+  'docs/HANDOVER.md',
   'docs/phan-tich-nghiep-vu.md',
   'docs/luong-trang-thai.md',
   'docs/lo-trinh-trien-khai.md',

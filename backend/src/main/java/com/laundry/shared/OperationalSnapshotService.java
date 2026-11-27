@@ -23,12 +23,13 @@ public class OperationalSnapshotService {
     private final EtaService eta;
     private final QueueSwapService swaps;
     private final Clock clock;
+    private final SnapshotNotificationService notifications;
 
     public OperationalSnapshotService(BuildingRepository buildings, BuildingAccessService access,
                                       MembershipRepository memberships, LaundryService laundry,
                                       QueueStatusService status, MachineHoldRepository holds,
                                       WashCycleRepository cycles, WashService wash,
-                                      EtaService eta, QueueSwapService swaps, Clock clock) {
+                                      EtaService eta, QueueSwapService swaps, Clock clock, SnapshotNotificationService notifications) {
         this.buildings = buildings;
         this.access = access;
         this.memberships = memberships;
@@ -40,6 +41,7 @@ public class OperationalSnapshotService {
         this.eta = eta;
         this.swaps = swaps;
         this.clock = clock;
+        this.notifications = notifications;
     }
 
     @Transactional
@@ -75,12 +77,13 @@ public class OperationalSnapshotService {
                 now, estimate.assumptions(), estimate.reason()
             ),
             swaps.list(username, buildingId, 0, 50),
-            now
+            now,
+            notifications.get(username, buildingId)
         );
     }
 
     public record Snapshot(LaundryService.BuildingView building, LaundryService.BuildingSummary membership,
                            QueueStatusService.QueueStatusView queueStatus, List<AllocationService.HoldView> holds,
                            List<WashService.CycleView> myCycles, WashService.CycleView previousCycle,
-                           EtaService.Estimate eta, PageView<QueueSwapService.SwapView> swaps, Instant serverNow) {}
+                           EtaService.Estimate eta, PageView<QueueSwapService.SwapView> swaps, Instant serverNow, SnapshotNotificationService.Facts notifications) {}
 }
