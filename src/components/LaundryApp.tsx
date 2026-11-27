@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import AuthSection from '@/components/AuthSection';
 import NotificationToast from '@/components/NotificationToast';
+import OperationalNotifications from '@/components/OperationalNotifications';
+import type { NotificationInput } from '@/lib/operational-notifications';
 import type { MachineHoldView } from '@/components/MachineHoldCard';
 import type { BuildingMember, PendingMember } from '@/components/MemberManagementPanel';
 import type { QueueParticipation } from '@/components/QueuePanel';
@@ -37,7 +39,6 @@ import type {
 
 const VALID_STATES = new Set<QueueParticipation>(['NONE', 'WAITING', 'HELD', 'WASHING']);
 const POLL_INTERVAL_MS = 5000;
-const REQUEST_TIMEOUT_MS = 15000;
 const STORAGE_BUILDING_KEY = 'laundry_selected_building_id';
 
 interface LaundryAppProps {
@@ -45,62 +46,7 @@ interface LaundryAppProps {
   initialView?: AppView;
 }
 
-async function apiJson<T>(url: string, init?: RequestInit): Promise<{ ok: boolean; status: number; data?: T; error?: string }> {
-  const controller = new AbortController();
-  const timeoutId = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-
-  let res: Response;
-  try {
-    res = await fetch(url, {
-      ...init,
-      signal: init?.signal ?? controller.signal,
-      headers: {
-        ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
-        ...(init?.headers ?? {}),
-      },
-    });
-  } catch (err) {
-    if (err instanceof DOMException && err.name === 'AbortError') {
-      return {
-        ok: false,
-        status: 504,
-        error: 'Yêu cầu quá thời gian phản hồi. Vui lòng kiểm tra kết nối và thử lại.',
-      };
-    }
-    return {
-      ok: false,
-      status: 0,
-      error: 'Không thể kết nối tới máy chủ. Vui lòng kiểm tra mạng và thử lại.',
-    };
-  } finally {
-    window.clearTimeout(timeoutId);
-  }
-
-  if (res.status === 204) {
-    return { ok: true, status: 204 };
-  }
-
-  let payload: unknown = null;
-  const text = await res.text();
-  if (text) {
-    try {
-      payload = JSON.parse(text);
-    } catch {
-      payload = null;
-    }
-  }
-
-  if (!res.ok) {
-    const errObj = payload as { error?: string } | null;
-    return {
-      ok: false,
-      status: res.status,
-      error: errObj?.error ?? 'Không thể hoàn tất yêu cầu.',
-    };
-  }
-
-  return { ok: true, status: res.status, data: payload as T };
-}
+import { apiJson } from '@/lib/api-json';
 
 function syncBrowserUrl(buildingId: string | null, view: AppView) {
   if (typeof window === 'undefined') return;
@@ -117,6 +63,7 @@ function syncBrowserUrl(buildingId: string | null, view: AppView) {
 export default function LaundryApp({ initialBuildingId, initialView }: LaundryAppProps = {}) {
   const [account, setAccount] = useState<AccountView | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
+  const [notificationInput, setNotificationInput] = useState<NotificationInput | null>(null);
   const [activeView, setActiveView] = useState<AppView>(initialView ?? 'overview');
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -196,6 +143,7 @@ export default function LaundryApp({ initialBuildingId, initialView }: LaundryAp
   }, []);
 
   const resetBuildingSnapshot = useCallback(() => {
+    setNotificationInput(null);
     buildingDetailFor.current = null;
     setBuildingDetail(null);
     setHolds([]);
@@ -392,6 +340,8 @@ export default function LaundryApp({ initialBuildingId, initialView }: LaundryAp
           setSyncError(null);
         }
 
+        let notificationMembers: string[] | null = null;
+        let notificationIssues: string[] | null = null;
         if (latestSummary?.role === 'MANAGER' && latestSummary.status === 'APPROVED') {
           const [pendingRes, membersRes, issuesRes] = await Promise.all([
             apiJson<PendingMember[]>(`/api/buildings/${summary.id}/members/pending`),
@@ -428,10 +378,14 @@ export default function LaundryApp({ initialBuildingId, initialView }: LaundryAp
           setIssues(issuesRes.data);
           setPendingMembers(pendingRes.data);
           setApprovedMembers(membersRes.data);
+          notificationMembers = pendingRes.data.map(member => member.id);
+          notificationIssues = issuesRes.data.map(issue => issue.id);
         } else {
           clearManagerState();
           setIssues([]);
         }
+        if (snapshot && account) setNotificationInput({ accountId: account.id, snapshot,
+          pendingMemberIds: notificationMembers, issueIds: notificationIssues });
         setRefreshKey((value) => value + 1);
       } catch (err) {
         if (requestId === detailRequestId.current) {
@@ -458,7 +412,7 @@ export default function LaundryApp({ initialBuildingId, initialView }: LaundryAp
         }
       }
     },
-    [clearManagerState, handleSessionExpired, resetBuildingSnapshot],
+    [account, clearManagerState, handleSessionExpired, resetBuildingSnapshot],
   );
 
   const refreshSelectedBuilding = useCallback(async () => {
@@ -1115,6 +1069,9 @@ export default function LaundryApp({ initialBuildingId, initialView }: LaundryAp
             {error}
           </div>
         )}
+        <OperationalNotifications input={selectedSummary?.status === 'APPROVED' && !isSyncStale
+          && notificationInput?.accountId === account.id && notificationInput.snapshot.building.id === selectedId ? notificationInput : null}
+          onNavigate={navigate} />
         {renderMainContent()}
       </AppShell>
 

@@ -2,6 +2,14 @@
 
 > Bắt đầu bằng file này và `git status --short --branch`. Chỉ mở các file liên quan tác vụ; không coi nội dung này là quyền phê duyệt merge/push.
 
+## FRONTEND FINALIZATION / NOTIFICATIONS — 2026-11-28
+
+- Tiếp tục trên `fix/final-integration-verification`, nền develop `9df0dd3`; không redesign hoặc deploy.
+- Thêm notification facts trong snapshot Java, thông báo trong trang dedup/scoped từ dữ liệu thật; sửa timeout bao phủ body read và external signal; icon404; Việt hóa before/after nhật ký.
+- Cuối milestone: Java clean test **94/94**, frontend **250/250**, docs/lint/typecheck và webpackproductionbuild đạt. Chrome desktop1440/mobile390 trên10trang, notification luồng thật và reload: đạt; khôngpageerror/console/API lỗi lần cuối.
+- Axe/Lighthouse chưa cài/chạy do cần user cấp phép riêng. Chưa harden mọi backend group hoặc stress dữ liệu lớn; chi tiết evidence và backlog trong `docs/HANDOVER.md`.
+- Chưa commit/push/PR. Không đưa dữ liệu thử, ảnh/browser scripts hoặc tài liệu local/tệp Word tạm vào commit.
+
 ## PRODUCT REFINEMENT — 2026-11-26
 
 - **Trạng thái workspace ban đầu:** Nhánh `develop` (`76680a6`, đã tích hợp PR #1–#13). Baseline ban đầu đạt 89/89 test Java và 220/220 test frontend.

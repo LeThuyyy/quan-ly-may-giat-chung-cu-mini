@@ -16,6 +16,9 @@ public interface QueueSwapRepository extends JpaRepository<QueueSwapRequest,UUID
     Page<QueueSwapRequest> related(UUID buildingId,UUID accountId,Pageable page);
     @Query("select s from QueueSwapRequest s where s.buildingId=:buildingId and (s.senderId=:accountId or s.recipientId=:accountId) and s.status=:status and s.expiresAt>:now")
     Page<QueueSwapRequest> pendingRelated(UUID buildingId,UUID accountId,QueueSwapRequest.Status status,Instant now,Pageable page);
+    @Query("select s from QueueSwapRequest s where s.buildingId=:buildingId and s.recipientId=:accountId and s.status=:status and s.expiresAt>:now")
+    Page<QueueSwapRequest> incoming(UUID buildingId,UUID accountId,QueueSwapRequest.Status status,Instant now,Pageable page);
+    Page<QueueSwapRequest> findByBuildingIdAndSenderIdAndStatusIn(UUID buildingId,UUID senderId,List<QueueSwapRequest.Status> statuses,Pageable page);
     @Query("select distinct s.buildingId from QueueSwapRequest s where s.status=:status and s.expiresAt<=:now")
     List<UUID> expiredBuildings(QueueSwapRequest.Status status,Instant now);
 }
