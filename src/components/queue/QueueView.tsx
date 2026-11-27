@@ -125,8 +125,9 @@ export default function QueueView({
     setBusy(true);
     setError(null);
     setNotice(null);
+    let response: Response;
     try {
-      const response = await fetch(`/api/buildings/${buildingId}/queue${method === 'POST' ? '' : '/me'}`, {
+      response = await fetch(`/api/buildings/${buildingId}/queue${method === 'POST' ? '' : '/me'}`, {
         method,
         cache: 'no-store',
         ...(ready === undefined
@@ -136,6 +137,13 @@ export default function QueueView({
               body: JSON.stringify({ ready }),
             }),
       });
+    } catch {
+      setError('Mất kết nối, chưa rõ thao tác đã được ghi nhận hay chưa. Hãy làm mới.');
+      setBusy(false);
+      return;
+    }
+
+    try {
       if (response.status === 401) {
         callbacks.current.onSessionExpired();
         return;
@@ -155,9 +163,14 @@ export default function QueueView({
           ? 'Đã rời khỏi hàng đợi.'
           : 'Đã cập nhật trạng thái hàng đợi.',
       );
-      await callbacks.current.onRefresh();
-    } catch {
-      setError('Mất kết nối, chưa rõ thao tác đã được ghi nhận hay chưa. Hãy làm mới.');
+      try {
+        await callbacks.current.onRefresh();
+      } catch (refreshErr) {
+        if (refreshErr instanceof Error && refreshErr.message === 'Refresh scope was replaced') {
+          return;
+        }
+        setError('Đã ghi nhận thao tác nhưng chưa tải lại được trạng thái mới. Hãy bấm Làm mới.');
+      }
     } finally {
       setBusy(false);
     }

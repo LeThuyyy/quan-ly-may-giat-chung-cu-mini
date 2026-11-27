@@ -34,8 +34,16 @@ public class ActivityService {
     public PageView<EventView> list(String username, UUID buildingId, int page, int size, String type, UUID machineId) {
         access.require(username,buildingId,true); PageView.validate(page,size);
         if (type!=null && !type.matches("[A-Z_]{1,60}")) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Loại sự kiện không hợp lệ");
-        return PageView.from(events.history(buildingId,clock.instant().minus(Duration.ofDays(90)),type,machineId,
-            PageRequest.of(page,size,Sort.by(Sort.Order.desc("occurredAt"),Sort.Order.desc("id")))),
+        Instant cutoff = clock.instant().minus(Duration.ofDays(90));
+        PageRequest pageable = PageRequest.of(page, size, Sort.by(Sort.Order.desc("occurredAt"), Sort.Order.desc("id")));
+        var result = (type != null && machineId != null)
+            ? events.findByBuildingIdAndOccurredAtGreaterThanAndActionAndMachineId(buildingId, cutoff, type, machineId, pageable)
+            : (type != null)
+                ? events.findByBuildingIdAndOccurredAtGreaterThanAndAction(buildingId, cutoff, type, pageable)
+                : (machineId != null)
+                    ? events.findByBuildingIdAndOccurredAtGreaterThanAndMachineId(buildingId, cutoff, machineId, pageable)
+                    : events.findByBuildingIdAndOccurredAtGreaterThan(buildingId, cutoff, pageable);
+        return PageView.from(result,
             e->new EventView(e.getId(),e.getActorId(),e.getAction(),e.getTargetId(),e.getMachineId(),e.getBeforeState(),e.getAfterState(),e.getOccurredAt()));
     }
     @Scheduled(fixedDelay=3600000)
