@@ -24,4 +24,35 @@ describe('assertSameOrigin', () => {
   it('accepts an exact matching Origin and Host', () => {
     expect(assertSameOrigin(request({ Host: 'localhost:3000', Origin: 'http://localhost:3000' }))).toBeNull();
   });
+
+  it('accepts HTTPS Origin behind TLS reverse proxy when COOKIE_SECURE is true', () => {
+    const prev = process.env.COOKIE_SECURE;
+    process.env.COOKIE_SECURE = 'true';
+    try {
+      expect(
+        assertSameOrigin(
+          request({
+            Host: 'may-giat.onrender.com',
+            Origin: 'https://may-giat.onrender.com',
+            'X-Forwarded-Proto': 'https',
+            'X-Forwarded-Host': 'may-giat.onrender.com',
+          }),
+        ),
+      ).toBeNull();
+
+      expect(
+        assertSameOrigin(
+          request({
+            Host: 'may-giat.onrender.com',
+            Origin: 'https://evil.example',
+            'X-Forwarded-Proto': 'https',
+            'X-Forwarded-Host': 'may-giat.onrender.com',
+          }),
+        )?.status,
+      ).toBe(403);
+    } finally {
+      if (prev === undefined) delete process.env.COOKIE_SECURE;
+      else process.env.COOKIE_SECURE = prev;
+    }
+  });
 });

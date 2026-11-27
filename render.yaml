@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: quan-ly-may-giat-chung-cu-mini
+    runtime: docker
+    plan: free
+    branch: develop
+    healthCheckPath: /
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: JAVA_API_ORIGIN
+        value: http://127.0.0.1:8080
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: DATA_DIR
+        value: /app/.data

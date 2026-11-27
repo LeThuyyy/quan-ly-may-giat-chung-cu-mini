@@ -1,0 +1,13 @@
+node_modules
+.next
+.data
+backend/.data
+backend/target
+.git
+*.mv.db
+*.trace.db
+*.log
+.env
+.env.*
+coverage
+tsconfig.tsbuildinfo

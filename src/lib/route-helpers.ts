@@ -25,7 +25,23 @@ export function assertSameOrigin(request: NextRequest): NextResponse | null {
   }
   try {
     const parsed = new URL(origin);
-    if (parsed.origin !== origin || parsed.origin !== request.nextUrl.origin || parsed.host !== host) {
+    const forwardedProto = request.headers
+      .get('x-forwarded-proto')
+      ?.split(',')[0]
+      ?.trim()
+      .toLowerCase();
+    const forwardedHost = request.headers
+      .get('x-forwarded-host')
+      ?.split(',')[0]
+      ?.trim();
+    const expectedHost = forwardedHost || host;
+    const expectedProto =
+      process.env.COOKIE_SECURE === 'true' && forwardedProto === 'https'
+        ? 'https:'
+        : request.nextUrl.protocol;
+    const expectedOrigin = `${expectedProto}//${expectedHost}`;
+
+    if (parsed.origin !== origin || parsed.origin !== expectedOrigin || parsed.host !== expectedHost) {
       return NextResponse.json({ error: 'Yêu cầu khác nguồn không được phép.' }, { status: 403 });
     }
   } catch {
