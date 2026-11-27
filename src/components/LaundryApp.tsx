@@ -14,6 +14,7 @@ import ChatPanel from '@/components/ChatPanel';
 import QueueEstimate from '@/components/QueueEstimate';
 import QueueSwapPanel from '@/components/QueueSwapPanel';
 import { ChatIcon, QrIcon, RefreshIcon, WasherIcon } from '@/components/Icons';
+import NotificationToast from '@/components/NotificationToast';
 import Link from 'next/link';
 
 interface AccountView {
@@ -64,15 +65,38 @@ interface OperationalSnapshot {
 
 const VALID_STATES = new Set<QueueParticipation>(['NONE', 'WAITING', 'HELD', 'WASHING']);
 const POLL_INTERVAL_MS = 5000;
+const REQUEST_TIMEOUT_MS = 15000;
 
 async function apiJson<T>(url: string, init?: RequestInit): Promise<{ ok: boolean; status: number; data?: T; error?: string }> {
-  const res = await fetch(url, {
-    ...init,
-    headers: {
-      ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
-      ...(init?.headers ?? {}),
-    },
-  });
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      ...init,
+      signal: init?.signal ?? controller.signal,
+      headers: {
+        ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
+        ...(init?.headers ?? {}),
+      },
+    });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      return {
+        ok: false,
+        status: 504,
+        error: 'Yêu cầu quá thời gian phản hồi. Vui lòng kiểm tra kết nối và thử lại.',
+      };
+    }
+    return {
+      ok: false,
+      status: 0,
+      error: 'Không thể kết nối tới máy chủ. Vui lòng kiểm tra mạng và thử lại.',
+    };
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
 
   if (res.status === 204) {
     return { ok: true, status: 204 };
@@ -676,41 +700,44 @@ export default function LaundryApp() {
 
   return (
     <main className="shell">
-      <header className="topbar">
-        <span className="topbar-brand">
-          <span className="mark" aria-hidden="true"><WasherIcon size={20} /></span>
-          <span>GIẶT CHUNG CƯ</span>
-        </span>
-        {account ? (
+      <NotificationToast
+        message={notice}
+        variant="success"
+        onDismiss={() => setNotice(null)}
+      />
+
+      {account && (
+        <header className="topbar">
+          <span className="topbar-brand">
+            <span className="mark" aria-hidden="true"><WasherIcon size={20} /></span>
+            <span>GIẶT CHUNG CƯ</span>
+          </span>
           <div className="topbar-user">
             <span className="badge">{account.displayName} (@{account.username})</span>
             <button type="button" className="btn btn-outline btn-sm" onClick={handleLogout} disabled={busy}>
               Đăng xuất
             </button>
           </div>
-        ) : (
-          <span className="badge">KẾT NỐI JAVA API</span>
-        )}
-      </header>
+        </header>
+      )}
 
-      {error && (
+      {account && error && (
         <div className="alert alert-error" role="alert">
           {error}
         </div>
       )}
-      {notice && (
-        <div className="alert alert-ok" role="status">
-          {notice}
-        </div>
-      )}
 
       {!authChecked ? (
-        <section className="panel">
-          <p>Đang kiểm tra phiên đăng nhập...</p>
+        <section className="auth-loading" aria-busy="true">
+          <div className="panel auth-loading-card">
+            <span className="btn-spinner btn-spinner-dark" aria-hidden="true" />
+            <p className="muted-note" style={{ margin: 0 }}>Đang kiểm tra phiên đăng nhập...</p>
+          </div>
         </section>
       ) : !account ? (
         <AuthSection
           busy={busy}
+          error={error}
           onLogin={handleLogin}
           onRegister={handleRegister}
           onClearMessages={() => {
@@ -1055,9 +1082,11 @@ export default function LaundryApp() {
         </section>
       )}
 
-      <footer>
-        Giao diện Next.js kết nối phiên bảo mật tới backend Spring Boot Java · Đóng trang không gia hạn giữ lượt 8 phút.
-      </footer>
+      {account && (
+        <footer>
+          Giặt chung cư · Đóng trang không gia hạn giữ lượt 8 phút.
+        </footer>
+      )}
     </main>
   );
 }
