@@ -1,71 +1,49 @@
 'use client';
 
-import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import AuthSection from '@/components/AuthSection';
-import BuildingAdminPanel from '@/components/BuildingAdminPanel';
-import ConfirmMachineFreeButton from '@/components/ConfirmMachineFreeButton';
-import MachineHoldCard, { MachineHoldView } from '@/components/MachineHoldCard';
-import MemberManagementPanel, { BuildingMember, PendingMember } from '@/components/MemberManagementPanel';
-import QueuePanel, { QueueEntryView, QueueParticipation } from '@/components/QueuePanel';
-import WashCycleCard, { WashCycleView } from '@/components/WashCycleCard';
-import WashHoldActions from '@/components/WashHoldActions';
-import WashManagerPanel from '@/components/WashManagerPanel';
-import ChatPanel from '@/components/ChatPanel';
-import QueueEstimate from '@/components/QueueEstimate';
-import QueueSwapPanel from '@/components/QueueSwapPanel';
-import { ChatIcon, QrIcon, RefreshIcon, WasherIcon } from '@/components/Icons';
 import NotificationToast from '@/components/NotificationToast';
-import Link from 'next/link';
-
-interface AccountView {
-  id: string;
-  username: string;
-  displayName: string;
-}
-
-interface BuildingSummary {
-  id: string;
-  name: string;
-  role: 'MANAGER' | 'RESIDENT';
-  status: 'PENDING' | 'APPROVED';
-}
-
-interface MachineView {
-  id: string;
-  label: string;
-  status: 'AVAILABLE' | 'MAINTENANCE' | 'RUNNING' | 'NEEDS_CHECK';
-}
-
-interface BuildingView {
-  id: string;
-  name: string;
-  machines: MachineView[];
-  queue: QueueEntryView[];
-}
-
-interface QueueMeResponse {
-  state: string;
-  queueEntryId: string | null;
-  ready: boolean | null;
-  holdId: string | null;
-  machineId: string | null;
-  expiresAt: string | null;
-  serverNow: string;
-}
-
-interface OperationalSnapshot {
-  building: BuildingView;
-  membership: BuildingSummary;
-  queueStatus: QueueMeResponse;
-  holds: MachineHoldView[];
-  myCycles: WashCycleView[];
-  previousCycle: WashCycleView | null;
-  serverNow: string;
-}
+import type { MachineHoldView } from '@/components/MachineHoldCard';
+import type { BuildingMember, PendingMember } from '@/components/MemberManagementPanel';
+import type { QueueParticipation } from '@/components/QueuePanel';
+import type { WashCycleView } from '@/components/WashCycleCard';
+import AccountProfileView from '@/components/account/AccountProfileView';
+import AdminActivityView from '@/components/admin/AdminActivityView';
+import AdminInvitationsView from '@/components/admin/AdminInvitationsView';
+import AdminMachinesView from '@/components/admin/AdminMachinesView';
+import AdminMembersView from '@/components/admin/AdminMembersView';
+import AdminModerationView from '@/components/admin/AdminModerationView';
+import CreateBuildingModal from '@/components/buildings/CreateBuildingModal';
+import JoinBuildingModal from '@/components/buildings/JoinBuildingModal';
+import ChatView from '@/components/chat/ChatView';
+import { BuildingIcon, ClockIcon, PlusIcon, TicketIcon } from '@/components/Icons';
+import AppShell from '@/components/layout/AppShell';
+import MachinesView from '@/components/machines/MachinesView';
+import OverviewView from '@/components/overview/OverviewView';
+import QueueView from '@/components/queue/QueueView';
+import SwapsView from '@/components/swaps/SwapsView';
+import EmptyState from '@/components/ui/EmptyState';
+import ErrorState from '@/components/ui/ErrorState';
+import { SkeletonCard } from '@/components/ui/Skeleton';
+import { buildAppPath, isManagerView, parsePathname } from '@/lib/navigation';
+import type {
+  AccountView,
+  AppView,
+  BuildingSummary,
+  BuildingView,
+  MachineView,
+  OperationalSnapshot,
+} from '@/types/laundry';
 
 const VALID_STATES = new Set<QueueParticipation>(['NONE', 'WAITING', 'HELD', 'WASHING']);
 const POLL_INTERVAL_MS = 5000;
 const REQUEST_TIMEOUT_MS = 15000;
+const STORAGE_BUILDING_KEY = 'laundry_selected_building_id';
+
+interface LaundryAppProps {
+  initialBuildingId?: string;
+  initialView?: AppView;
+}
 
 async function apiJson<T>(url: string, init?: RequestInit): Promise<{ ok: boolean; status: number; data?: T; error?: string }> {
   const controller = new AbortController();
@@ -124,20 +102,33 @@ async function apiJson<T>(url: string, init?: RequestInit): Promise<{ ok: boolea
   return { ok: true, status: res.status, data: payload as T };
 }
 
-export default function LaundryApp() {
+function syncBrowserUrl(buildingId: string | null, view: AppView) {
+  if (typeof window === 'undefined') return;
+  try {
+    const targetPath = buildAppPath(buildingId, view);
+    if (window.location.pathname !== targetPath) {
+      window.history.pushState({ buildingId, view }, '', targetPath);
+    }
+  } catch {
+    // Ignore history restriction in non-browser or sandboxed test environments.
+  }
+}
+
+export default function LaundryApp({ initialBuildingId, initialView }: LaundryAppProps = {}) {
   const [account, setAccount] = useState<AccountView | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
-  const [section, setSection] = useState<'laundry' | 'chat'>('laundry');
+  const [activeView, setActiveView] = useState<AppView>(initialView ?? 'overview');
   const [refreshKey, setRefreshKey] = useState(0);
 
   const [buildings, setBuildings] = useState<BuildingSummary[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(initialBuildingId ?? null);
   const [buildingDetail, setBuildingDetail] = useState<BuildingView | null>(null);
   const [holds, setHolds] = useState<MachineHoldView[]>([]);
   const [holdsVerified, setHoldsVerified] = useState(false);
   const [myCycles, setMyCycles] = useState<WashCycleView[] | null>(null);
   const [issues, setIssues] = useState<WashCycleView[] | null>([]);
   const [holdHandover, setHoldHandover] = useState<WashCycleView | null | undefined>(undefined);
+  const [snapshotEta, setSnapshotEta] = useState<OperationalSnapshot['eta']>(undefined);
   const [serverNow, setServerNow] = useState<string | undefined>(undefined);
   const [participation, setParticipation] = useState<QueueParticipation>('UNKNOWN');
   const [verifiedHoldId, setVerifiedHoldId] = useState<string | null>(null);
@@ -148,10 +139,8 @@ export default function LaundryApp() {
   const [approvedMembers, setApprovedMembers] = useState<BuildingMember[]>([]);
   const [inviteToken, setInviteToken] = useState<string | null>(null);
 
-  const [newBuildingName, setNewBuildingName] = useState('');
-  const [machineCount, setMachineCount] = useState(2);
-  const [joinTokenInput, setJoinTokenInput] = useState('');
-  const [newMachineLabel, setNewMachineLabel] = useState('');
+  const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [joinModalOpen, setJoinModalOpen] = useState(false);
 
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -162,6 +151,42 @@ export default function LaundryApp() {
   const selectedStatus = selectedSummary?.status;
   const detailRequestId = useRef(0);
   const buildingDetailFor = useRef<string | null>(null);
+
+  const navigate = useCallback(
+    (nextView: AppView, nextBuildingId: string | null = selectedId) => {
+      const targetSummary = buildings.find((b) => b.id === nextBuildingId) ?? null;
+      const resolvedView =
+        isManagerView(nextView) && (targetSummary?.role !== 'MANAGER' || targetSummary?.status !== 'APPROVED')
+          ? 'overview'
+          : nextView;
+      setActiveView(resolvedView);
+      setError(null);
+      syncBrowserUrl(nextBuildingId, resolvedView);
+    },
+    [buildings, selectedId],
+  );
+
+  const selectBuilding = useCallback(
+    (id: string) => {
+      setSelectedId(id);
+      setInviteToken(null);
+      try {
+        window.sessionStorage.setItem(STORAGE_BUILDING_KEY, id);
+      } catch {
+        // Ignore storage restriction.
+      }
+      const nextSummary = buildings.find((b) => b.id === id);
+      const nextView =
+        isManagerView(activeView) && (nextSummary?.role !== 'MANAGER' || nextSummary?.status !== 'APPROVED')
+          ? 'overview'
+          : activeView === 'account'
+            ? 'overview'
+            : activeView;
+      setActiveView(nextView);
+      syncBrowserUrl(id, nextView);
+    },
+    [activeView, buildings],
+  );
 
   const clearManagerState = useCallback(() => {
     setPendingMembers([]);
@@ -177,6 +202,7 @@ export default function LaundryApp() {
     setMyCycles(null);
     setIssues([]);
     setHoldHandover(undefined);
+    setSnapshotEta(undefined);
     setServerNow(undefined);
     setParticipation('UNKNOWN');
     setVerifiedHoldId(null);
@@ -198,8 +224,15 @@ export default function LaundryApp() {
     const res = await apiJson<BuildingSummary[]>('/api/buildings');
     if (res.ok && res.data) {
       setBuildings(res.data);
+      let storedId: string | null = null;
+      try {
+        storedId = window.sessionStorage.getItem(STORAGE_BUILDING_KEY);
+      } catch {
+        storedId = null;
+      }
       setSelectedId((prev) => {
         if (prev && res.data!.some((b) => b.id === prev)) return prev;
+        if (storedId && res.data!.some((b) => b.id === storedId)) return storedId;
         const firstApproved = res.data!.find((b) => b.status === 'APPROVED');
         return firstApproved?.id ?? res.data![0]?.id ?? null;
       });
@@ -223,7 +256,6 @@ export default function LaundryApp() {
         resetBuildingSnapshot();
       } else if (!options?.silent) {
         setDetailError(null);
-        // Keep stale-state guards until the required server reads succeed.
       }
 
       try {
@@ -248,13 +280,21 @@ export default function LaundryApp() {
           throw new Error('Failed to verify current building membership');
         }
         const latestSummary = snapshot?.membership;
-        if (snapshotRes.ok && (!snapshot || snapshot.building.id !== summary.id || latestSummary?.id !== summary.id
-          || latestSummary.status !== 'APPROVED' || !Number.isFinite(Date.parse(snapshot.serverNow)))) {
+        if (
+          snapshotRes.ok &&
+          (!snapshot ||
+            snapshot.building.id !== summary.id ||
+            latestSummary?.id !== summary.id ||
+            latestSummary.status !== 'APPROVED' ||
+            !Number.isFinite(Date.parse(snapshot.serverNow)))
+        ) {
           throw new Error('Invalid operational snapshot');
         }
-        // Cập nhật lại vai trò và trạng thái thành viên mới nhất từ server
+
         if (buildingsRes.ok && Array.isArray(buildingsRes.data)) {
-          setBuildings(buildingsRes.data.map(item => item.id === summary.id && latestSummary ? latestSummary : item));
+          setBuildings(
+            buildingsRes.data.map((item) => (item.id === summary.id && latestSummary ? latestSummary : item)),
+          );
           const freshSummary = latestSummary ?? buildingsRes.data.find((b) => b.id === summary.id);
           if (!freshSummary) {
             resetBuildingSnapshot();
@@ -263,6 +303,7 @@ export default function LaundryApp() {
           }
           if (summary.role === 'MANAGER' && freshSummary.role !== 'MANAGER') {
             clearManagerState();
+            setActiveView((curr) => (isManagerView(curr) ? 'overview' : curr));
             setNotice('Vai trò của bạn đã được cập nhật thành Cư dân.');
           }
           if (freshSummary.status !== 'APPROVED') {
@@ -289,20 +330,19 @@ export default function LaundryApp() {
         setBuildingDetail(detailRes.data);
         setDetailError(null);
 
-        // Nếu queue/me hoặc holds lỗi: khóa thao tác, báo refresh thất bại, không coi dữ liệu cũ là đã cập nhật
         const nextHoldsOk = holdsRes.ok && Array.isArray(holdsRes.data);
         if (!queueMeRes.ok || !queueMeRes.data || !nextHoldsOk || !mineRes.ok || !Array.isArray(mineRes.data)) {
           throw new Error('Failed to refresh queue, holds or personal wash cycles');
         }
         setMyCycles(mineRes.data);
         setHoldHandover(undefined);
+        setSnapshotEta(snapshot?.eta);
         setServerNow(snapshot?.serverNow);
 
         const nextHolds = holdsRes.data!;
         setHolds(nextHolds);
         setHoldsVerified(true);
 
-        // Xác minh trạng thái yêu cầu cá nhân theo hợp đồng api-trang-thai-ca-nhan.md
         const rawState = queueMeRes.data.state as QueueParticipation;
         if (!VALID_STATES.has(rawState)) {
           setParticipation('UNKNOWN');
@@ -312,7 +352,7 @@ export default function LaundryApp() {
         } else if (rawState === 'WAITING') {
           const matchesQueue = Boolean(
             queueMeRes.data.queueEntryId &&
-            detailRes.data.queue.some((q) => q.id === queueMeRes.data!.queueEntryId),
+              detailRes.data.queue.some((q) => q.id === queueMeRes.data!.queueEntryId),
           );
           if (!matchesQueue) {
             setParticipation('UNKNOWN');
@@ -339,7 +379,6 @@ export default function LaundryApp() {
           setVerifiedHoldId(matchedHold.id);
           setSyncError(null);
         } else {
-          // NONE hoặc WASHING
           setParticipation(rawState);
           setVerifiedHoldId(null);
           setSyncError(null);
@@ -353,14 +392,14 @@ export default function LaundryApp() {
           ]);
           if (requestId !== detailRequestId.current) throw new Error('Refresh scope was replaced');
 
-          // Nếu bị quản lý khác hạ quyền đúng lúc gọi API quản lý -> tự hạ vai trò về RESIDENT và ẩn nút quản lý
-          if ([pendingRes, membersRes, issuesRes].some((result) => result.status === 401)) {
+          if ([pendingRes, membersRes, issuesRes].some((r) => r.status === 401)) {
             handleSessionExpired();
-            throw new Error('Session expired while loading manager data');
+            return;
           }
-          if (pendingRes.status === 403 || membersRes.status === 403 || issuesRes.status === 403) {
-            setIssues([]);
+          if ([pendingRes, membersRes, issuesRes].some((r) => r.status === 403)) {
             clearManagerState();
+            setIssues([]);
+            setActiveView((curr) => (isManagerView(curr) ? 'overview' : curr));
             setBuildings((prev) =>
               prev.map((item) => (item.id === summary.id ? { ...item, role: 'RESIDENT' } : item)),
             );
@@ -368,26 +407,24 @@ export default function LaundryApp() {
             throw new Error('Manager authority changed during refresh');
           }
 
-          if (!pendingRes.ok || !Array.isArray(pendingRes.data) || !membersRes.ok || !Array.isArray(membersRes.data)
-            || !issuesRes.ok || !Array.isArray(issuesRes.data)) {
+          if (
+            !pendingRes.ok ||
+            !Array.isArray(pendingRes.data) ||
+            !membersRes.ok ||
+            !Array.isArray(membersRes.data) ||
+            !issuesRes.ok ||
+            !Array.isArray(issuesRes.data)
+          ) {
             throw new Error('Failed to refresh manager members or wash issues');
           }
           setIssues(issuesRes.data);
-          if (pendingRes.ok && pendingRes.data) {
-            setPendingMembers(pendingRes.data);
-          } else if (!options?.silent) {
-            setError(pendingRes.error ?? 'Không tải được danh sách chờ duyệt.');
-          }
-          if (membersRes.ok && membersRes.data) {
-            setApprovedMembers(membersRes.data);
-          } else if (!options?.silent) {
-            setError(membersRes.error ?? 'Không tải được danh sách thành viên.');
-          }
+          setPendingMembers(pendingRes.data);
+          setApprovedMembers(membersRes.data);
         } else {
           clearManagerState();
           setIssues([]);
         }
-        setRefreshKey(value => value + 1);
+        setRefreshKey((value) => value + 1);
       } catch (err) {
         if (requestId === detailRequestId.current) {
           setParticipation('UNKNOWN');
@@ -413,9 +450,21 @@ export default function LaundryApp() {
   );
 
   const refreshSelectedBuilding = useCallback(async () => {
-    if (!selectedId || !selectedRole || selectedStatus !== 'APPROVED') throw new Error('Building scope is not authorized');
+    if (!selectedId || !selectedRole || selectedStatus !== 'APPROVED') {
+      throw new Error('Building scope is not authorized');
+    }
     await loadBuildingDetail({ id: selectedId, name: '', role: selectedRole, status: selectedStatus });
   }, [selectedId, selectedRole, selectedStatus, loadBuildingDetail]);
+
+  useEffect(() => {
+    const onPopState = () => {
+      const parsed = parsePathname(window.location.pathname);
+      if (parsed.buildingId) setSelectedId(parsed.buildingId);
+      setActiveView(parsed.view);
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -444,6 +493,13 @@ export default function LaundryApp() {
     };
   }, [selectedId, selectedRole, selectedStatus, loadBuildingDetail]);
 
+  const effectiveView: AppView =
+    selectedSummary &&
+    isManagerView(activeView) &&
+    (selectedSummary.role !== 'MANAGER' || selectedSummary.status !== 'APPROVED')
+      ? 'overview'
+      : activeView;
+
   // Polling chung do component cha sở hữu khi đang mở trang
   useEffect(() => {
     if (!account || !selectedId || !selectedRole || selectedStatus !== 'APPROVED') return;
@@ -464,14 +520,17 @@ export default function LaundryApp() {
       running = true;
       try {
         if (document.visibilityState === 'visible') await loadBuildingDetail(summary, { silent: true });
-      } catch { /* loadBuildingDetail already closes stale action surfaces */ }
-      finally {
+      } catch {
+        /* loadBuildingDetail already closes stale action surfaces */
+      } finally {
         running = false;
         if (active) timer = window.setTimeout(() => void tick(), POLL_INTERVAL_MS);
       }
     };
     timer = window.setTimeout(() => void tick(), POLL_INTERVAL_MS);
-    const onVisibilityChange = () => { if (document.visibilityState === 'visible') void tick(); };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') void tick();
+    };
     document.addEventListener('visibilitychange', onVisibilityChange);
 
     return () => {
@@ -515,6 +574,7 @@ export default function LaundryApp() {
         return;
       }
       setAccount(res.data);
+      setActiveView('overview');
       await loadBuildings();
     } finally {
       setBusy(false);
@@ -532,99 +592,117 @@ export default function LaundryApp() {
       setAccount(null);
       setBuildings([]);
       setSelectedId(null);
+      setActiveView('overview');
+      try {
+        window.sessionStorage.removeItem(STORAGE_BUILDING_KEY);
+      } catch {
+        // Ignore storage error.
+      }
       setNotice('Đã đăng xuất.');
     } finally {
       setBusy(false);
     }
   };
 
-  const handleCreateBuilding = async (e: FormEvent) => {
-    e.preventDefault();
+  const handleCreateBuilding = async (name: string, machineCount: number): Promise<boolean> => {
     setBusy(true);
     setError(null);
     setNotice(null);
     try {
       const res = await apiJson<BuildingView>('/api/buildings', {
         method: 'POST',
-        body: JSON.stringify({ name: newBuildingName, machineCount: Number(machineCount) }),
+        body: JSON.stringify({ name, machineCount }),
       });
       if (!res.ok || !res.data) {
         setError(res.error ?? 'Không tạo được tòa.');
-        return;
+        return false;
       }
-      setNewBuildingName('');
       setNotice(`Đã tạo tòa "${res.data.name}" với ${res.data.machines.length} máy.`);
       await loadBuildings();
       setSelectedId(res.data.id);
+      setActiveView('overview');
+      try {
+        window.sessionStorage.setItem(STORAGE_BUILDING_KEY, res.data.id);
+      } catch {
+        // Ignore.
+      }
+      syncBrowserUrl(res.data.id, 'overview');
+      return true;
     } finally {
       setBusy(false);
     }
   };
 
-  const handleJoinByToken = async (e: FormEvent) => {
-    e.preventDefault();
+  const handleJoinByToken = async (token: string): Promise<boolean> => {
     setBusy(true);
     setError(null);
     setNotice(null);
     try {
-      const token = joinTokenInput.trim();
-      const res = await apiJson<{ buildingId: string; status: 'PENDING' | 'APPROVED' }>(
+      const res = await apiJson<{ buildingId?: string; status?: string }>(
         `/api/invitations/${encodeURIComponent(token)}/join`,
         { method: 'POST' },
       );
-      if (!res.ok || !res.data) {
+      if (!res.ok) {
         setError(res.error ?? 'Không gửi được yêu cầu tham gia.');
-        return;
+        return false;
       }
-      setJoinTokenInput('');
-      setNotice(
-        res.data.status === 'APPROVED'
-          ? 'Bạn đã là thành viên được duyệt của tòa này.'
-          : 'Đã gửi yêu cầu tham gia. Vui lòng chờ quản lý duyệt.',
-      );
+      setNotice('Đã gửi yêu cầu tham gia tòa. Hãy chờ quản lý phê duyệt.');
       await loadBuildings();
-      setSelectedId(res.data.buildingId);
+      if (res.data?.buildingId) {
+        setSelectedId(res.data.buildingId);
+        setActiveView('overview');
+      }
+      return true;
     } finally {
       setBusy(false);
     }
   };
 
-  const handleAddMachine = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!selectedSummary || syncError) return;
+  const handleAddMachine = async (label: string): Promise<boolean> => {
+    if (!selectedSummary || selectedSummary.role !== 'MANAGER') return false;
     setBusy(true);
     setError(null);
     setNotice(null);
     try {
       const res = await apiJson<MachineView>(`/api/buildings/${selectedSummary.id}/machines`, {
         method: 'POST',
-        body: JSON.stringify({ label: newMachineLabel }),
+        body: JSON.stringify({ label }),
       });
-      if (!res.ok) {
+      if (!res.ok || !res.data) {
         setError(res.error ?? 'Không thêm được máy.');
-        return;
+        return false;
       }
-      setNewMachineLabel('');
+      setNotice(`Đã thêm "${res.data.label}".`);
       await loadBuildingDetail(selectedSummary).catch(() => {});
+      return true;
     } finally {
       setBusy(false);
     }
   };
 
   const handleToggleMaintenance = async (machine: MachineView) => {
-    if (!selectedSummary || syncError) return;
+    if (!selectedSummary || selectedSummary.role !== 'MANAGER') return;
     setBusy(true);
     setError(null);
+    setNotice(null);
+    const nextMaint = machine.status !== 'MAINTENANCE';
     try {
-      const nextMaintenance = machine.status !== 'MAINTENANCE';
-      const res = await apiJson(`/api/buildings/${selectedSummary.id}/machines/${machine.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ maintenance: nextMaintenance }),
-      });
+      const res = await apiJson<MachineView>(
+        `/api/buildings/${selectedSummary.id}/machines/${machine.id}`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify({ maintenance: nextMaint }),
+        },
+      );
       if (!res.ok) {
-        setError(res.error ?? 'Không cập nhật được trạng thái máy.');
+        setError(res.error ?? 'Không cập nhật được trạng thái bảo trì.');
         return;
       }
+      setNotice(
+        nextMaint
+          ? `Đã chuyển "${machine.label}" sang Bảo trì.`
+          : `Đã mở lại "${machine.label}". Lưu ý: trạng thái mở lại chưa xác nhận máy trống.`,
+      );
       await loadBuildingDetail(selectedSummary).catch(() => {});
     } finally {
       setBusy(false);
@@ -632,35 +710,42 @@ export default function LaundryApp() {
   };
 
   const handleCreateInvite = async () => {
-    if (!selectedSummary || syncError) return;
+    if (!selectedSummary || selectedSummary.role !== 'MANAGER') return;
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
-      const res = await apiJson<{ token: string }>(`/api/buildings/${selectedSummary.id}/invitations`, {
-        method: 'POST',
-      });
+      const res = await apiJson<{ token: string }>(
+        `/api/buildings/${selectedSummary.id}/invitations`,
+        { method: 'POST' },
+      );
       if (!res.ok || !res.data) {
         setError(res.error ?? 'Không tạo được mã mời.');
         return;
       }
       setInviteToken(res.data.token);
+      setNotice('Đã tạo mã mời có hiệu lực 7 ngày.');
+      await loadBuildingDetail(selectedSummary).catch(() => {});
     } finally {
       setBusy(false);
     }
   };
 
   const handleApproveMember = async (accountId: string) => {
-    if (!selectedSummary || syncError) return;
+    if (!selectedSummary || selectedSummary.role !== 'MANAGER') return;
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
-      const res = await apiJson(`/api/buildings/${selectedSummary.id}/members/${accountId}/approve`, {
-        method: 'POST',
-      });
+      const res = await apiJson(
+        `/api/buildings/${selectedSummary.id}/members/${accountId}/approve`,
+        { method: 'POST' },
+      );
       if (!res.ok) {
         setError(res.error ?? 'Không duyệt được thành viên.');
         return;
       }
+      setNotice('Đã duyệt thành viên vào tòa.');
       await loadBuildingDetail(selectedSummary).catch(() => {});
     } finally {
       setBusy(false);
@@ -668,15 +753,18 @@ export default function LaundryApp() {
   };
 
   const handleChangeMemberRole = async (accountId: string, role: 'MANAGER' | 'RESIDENT') => {
-    if (!selectedSummary || syncError) return;
+    if (!selectedSummary || selectedSummary.role !== 'MANAGER') return;
     setBusy(true);
     setError(null);
     setNotice(null);
     try {
-      const res = await apiJson(`/api/buildings/${selectedSummary.id}/members/${accountId}/role`, {
-        method: 'PATCH',
-        body: JSON.stringify({ role }),
-      });
+      const res = await apiJson(
+        `/api/buildings/${selectedSummary.id}/members/${accountId}/role`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify({ role }),
+        },
+      );
       if (!res.ok) {
         setError(res.error ?? 'Không cập nhật được vai trò thành viên.');
         return;
@@ -689,52 +777,25 @@ export default function LaundryApp() {
     }
   };
 
-  const isSyncStale = Boolean(syncError);
-  const actionsDisabled = busy || isSyncStale;
-  const machineLabels = Object.fromEntries((buildingDetail?.machines ?? []).map(m => [m.id, m.label]));
-
-  const myHold =
-    !isSyncStale && participation === 'HELD' && verifiedHoldId
-      ? holds.find((item) => item.id === verifiedHoldId && item.accountId === account?.id) ?? null
-      : null;
-
-  return (
-    <main className="shell">
-      <NotificationToast
-        message={notice}
-        variant="success"
-        onDismiss={() => setNotice(null)}
-      />
-
-      {account && (
-        <header className="topbar">
-          <span className="topbar-brand">
-            <span className="mark" aria-hidden="true"><WasherIcon size={20} /></span>
-            <span>GIẶT CHUNG CƯ</span>
-          </span>
-          <div className="topbar-user">
-            <span className="badge">{account.displayName} (@{account.username})</span>
-            <button type="button" className="btn btn-outline btn-sm" onClick={handleLogout} disabled={busy}>
-              Đăng xuất
-            </button>
-          </div>
-        </header>
-      )}
-
-      {account && error && (
-        <div className="alert alert-error" role="alert">
-          {error}
-        </div>
-      )}
-
-      {!authChecked ? (
+  if (!authChecked) {
+    return (
+      <main className="shell">
         <section className="auth-loading" aria-busy="true">
           <div className="panel auth-loading-card">
             <span className="btn-spinner btn-spinner-dark" aria-hidden="true" />
-            <p className="muted-note" style={{ margin: 0 }}>Đang kiểm tra phiên đăng nhập...</p>
+            <p className="muted-note" style={{ margin: 0 }}>
+              Đang kiểm tra phiên đăng nhập...
+            </p>
           </div>
         </section>
-      ) : !account ? (
+      </main>
+    );
+  }
+
+  if (!account) {
+    return (
+      <main className="shell">
+        <NotificationToast message={notice} variant="success" onDismiss={() => setNotice(null)} />
         <AuthSection
           busy={busy}
           error={error}
@@ -745,348 +806,319 @@ export default function LaundryApp() {
             setNotice(null);
           }}
         />
-      ) : (
-        <section className="workspace">
-          <div className="sidebar">
-          <div className="sidebar-buildings">
-            <div className="panel">
-              <h2>Tòa nhà của bạn</h2>
-              {buildings.length === 0 ? (
-                <p className="muted-note">Bạn chưa tham gia tòa nào.</p>
-              ) : (
-                <ul className="building-list">
-                  {buildings.map((b) => (
-                    <li key={b.id}>
-                      <button
-                        type="button"
-                        className={b.id === selectedId ? 'building-item active' : 'building-item'}
-                        onClick={() => {
-                          setSelectedId(b.id);
-                          setInviteToken(null);
-                        }}
-                      >
-                        <strong>{b.name}</strong>
-                        <span>
-                          {b.role === 'MANAGER' ? 'Quản lý' : 'Cư dân'} ·{' '}
-                          {b.status === 'APPROVED' ? 'Đã duyệt' : 'Chờ duyệt'}
-                        </span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </div>
+      </main>
+    );
+  }
 
-          <aside className="sidebar-forms">
-            <form className="panel" onSubmit={handleCreateBuilding}>
-              <h3>Tạo tòa mới (Quản lý)</h3>
-              <label className="field">
-                <span>Tên tòa</span>
-                <input
-                  type="text"
-                  required
-                  maxLength={100}
-                  value={newBuildingName}
-                  onChange={(e) => setNewBuildingName(e.target.value)}
-                  placeholder="vd: Chung cư Mini A"
-                />
-              </label>
-              <label className="field">
-                <span>Số máy giặt (1–30)</span>
-                <input
-                  type="number"
-                  required
-                  min={1}
-                  max={30}
-                  value={machineCount}
-                  onChange={(e) => setMachineCount(Number(e.target.value))}
-                />
-              </label>
-              <button type="submit" className="btn btn-primary" disabled={busy}>
-                Tạo tòa
-              </button>
-            </form>
+  const isSyncStale = Boolean(syncError);
+  const machineLabels = Object.fromEntries((buildingDetail?.machines ?? []).map((m) => [m.id, m.label]));
+  const myHold =
+    !isSyncStale && participation === 'HELD' && verifiedHoldId
+      ? holds.find((item) => item.id === verifiedHoldId && item.accountId === account.id) ?? null
+      : null;
 
-            <form className="panel" onSubmit={handleJoinByToken}>
-              <h3>Tham gia bằng mã mời</h3>
-              <label className="field">
-                <span>Mã mời (64 ký tự hex)</span>
-                <input
-                  type="text"
-                  required
-                  value={joinTokenInput}
-                  onChange={(e) => setJoinTokenInput(e.target.value)}
-                  placeholder="Dán mã mời từ quản lý"
-                />
-              </label>
-              <button type="submit" className="btn btn-outline" disabled={busy}>
-                Gửi yêu cầu tham gia
-              </button>
-            </form>
-          </aside>
-          </div>
+  const triggerManualRefresh = () => {
+    if (!selectedSummary) return;
+    void loadBuildingDetail(selectedSummary).catch(() => {});
+  };
 
-          <div className="main-pane">
-            {!selectedSummary ? (
-              <div className="panel">
-                <p>Hãy tạo một tòa mới hoặc nhập mã mời để bắt đầu.</p>
-              </div>
-            ) : selectedSummary.status === 'PENDING' ? (
-              <div className="panel">
-                <h2>{selectedSummary.name}</h2>
-                <p>Yêu cầu tham gia của bạn đang chờ quản lý tòa duyệt.</p>
-              </div>
-            ) : detailError ? (
-              <div className="panel" role="alert">
-                <p>{detailError}</p>
+  const renderMainContent = () => {
+    if (effectiveView === 'account') {
+      return (
+        <AccountProfileView
+          account={account}
+          buildings={buildings}
+          busy={busy}
+          onSelectBuilding={selectBuilding}
+          onOpenCreateBuilding={() => setCreateModalOpen(true)}
+          onOpenJoinBuilding={() => setJoinModalOpen(true)}
+          onLogout={() => void handleLogout()}
+        />
+      );
+    }
+
+    if (!selectedSummary) {
+      return (
+        <div className="surface-card onboarding-card">
+          <EmptyState
+            icon={<BuildingIcon size={28} />}
+            title="Chào mừng đến với Giặt chung cư"
+            description="Bạn chưa tham gia tòa nhà nào. Hãy tạo tòa nhà mới (nếu bạn là quản lý) hoặc nhập mã mời từ quản lý tòa nhà của bạn."
+            action={
+              <div className="action-row" style={{ justifyContent: 'center' }}>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => setJoinModalOpen(true)}
+                >
+                  <TicketIcon size={15} />
+                  <span>Tham gia bằng mã mời</span>
+                </button>
                 <button
                   type="button"
                   className="btn btn-outline"
-                  onClick={() => void loadBuildingDetail(selectedSummary).catch(() => {})}
-                  disabled={busy}
+                  onClick={() => setCreateModalOpen(true)}
                 >
-                  Thử tải lại
+                  <PlusIcon size={15} />
+                  <span>Tạo tòa nhà mới</span>
                 </button>
               </div>
-            ) : !buildingDetail || buildingDetail.id !== selectedSummary.id ? (
-              <div className="panel" role="status">
-                <p>Đang tải dữ liệu tòa...</p>
-              </div>
-            ) : (
-              <>
-                <div className="panel">
-                  <div className="panel-head">
-                    <h2>{buildingDetail.name}</h2>
-                    <button
-                      type="button"
-                      className="btn btn-outline btn-sm"
-                      onClick={() => void loadBuildingDetail(selectedSummary).catch(() => {})}
-                      disabled={busy}
-                    >
-                      <RefreshIcon /> Làm mới
-                    </button>
-                  </div>
-                  <div className="status-strip" aria-label="Tóm tắt trạng thái">
-                    <div className="status-metric">
-                      <span className="status-metric-label">Vai trò tại tòa</span>
-                      <span className="status-metric-value">
-                        {selectedSummary.role === 'MANAGER' ? 'Quản lý tòa nhà' : 'Cư dân đã duyệt'}
-                      </span>
-                    </div>
-                    <div className="status-metric">
-                      <span className="status-metric-label">Lượt giặt của bạn</span>
-                      <span className="status-metric-value">
-                        {isSyncStale || participation === 'UNKNOWN'
-                          ? 'Cần tải lại trạng thái'
-                          : participation === 'HELD'
-                            ? 'Đã được giao máy (giữ 8 phút)'
-                            : participation === 'WASHING'
-                              ? 'Đang có mẻ giặt chưa hoàn tất'
-                              : participation === 'WAITING'
-                                ? 'Đang xếp hàng chờ máy'
-                                : 'Chưa vào hàng đợi'}
-                      </span>
-                    </div>
-                    <div className="status-metric">
-                      <span className="status-metric-label">Tổng quan máy &amp; hàng</span>
-                      <span className="status-metric-value">
-                        {buildingDetail.machines.filter((m) => m.status === 'AVAILABLE').length}/{buildingDetail.machines.length} máy mở · {buildingDetail.queue.length} người chờ
-                      </span>
-                    </div>
-                  </div>
-                  <p className="muted-note">
-                    Thời gian dự kiến chỉ mang tính tham khảo, không chứng minh máy đã dừng. Luôn kiểm tra thực tế tại máy trước khi sử dụng.
-                  </p>
-                  {syncError && (
-                    <div className="alert alert-error" role="alert">
-                      {syncError}
-                    </div>
-                  )}
-                </div>
+            }
+          />
+        </div>
+      );
+    }
 
-                <nav className="section-nav" aria-label="Mục tòa nhà">
-                  <button type="button" className="btn btn-outline" aria-pressed={section === 'laundry'} onClick={() => setSection('laundry')}>
-                    <WasherIcon size={16} /> Giặt và hàng đợi
-                  </button>
-                  <button type="button" className="btn btn-outline" aria-pressed={section === 'chat'} onClick={() => setSection('chat')}>
-                    <ChatIcon size={16} /> Trò chuyện
-                  </button>
-                </nav>
-                {section === 'chat' && <ChatPanel buildingId={selectedSummary.id} accountId={account.id}
-                  isManager={selectedSummary.role === 'MANAGER'} onSessionExpired={handleSessionExpired} />}
-                {section === 'laundry' && <>
-                {myHold ? (
-                  <div className="bento-2">
-                    <MachineHoldCard
-                      buildingId={selectedSummary.id}
-                      accountId={account.id}
-                      hold={myHold}
-                      machineLabel={buildingDetail.machines.find((machine) => machine.id === myHold?.machineId)?.label}
-                      serverNow={serverNow}
-                      onRefresh={refreshSelectedBuilding}
-                      onSessionExpired={handleSessionExpired}
-                    />
-                    <WashHoldActions
-                      key={`${selectedSummary.id}:${account.id}:${myHold.id}`}
-                      buildingId={selectedSummary.id}
-                      hold={myHold}
-                      handover={holdHandover}
-                      serverNow={serverNow}
-                      onRefresh={refreshSelectedBuilding}
-                      onSessionExpired={handleSessionExpired}
-                    />
-                  </div>
-                ) : null}
+    if (selectedSummary.status === 'PENDING') {
+      return (
+        <div className="surface-card onboarding-card">
+          <EmptyState
+            icon={<ClockIcon size={28} />}
+            title={`${selectedSummary.name} · Đang chờ phê duyệt`}
+            description="Yêu cầu tham gia tòa nhà của bạn đã được gửi. Sau khi quản lý phê duyệt, bạn sẽ xem được danh sách máy giặt, hàng đợi và trò chuyện của tòa."
+            action={
+              <button
+                type="button"
+                className="btn btn-outline btn-sm"
+                onClick={() => void loadBuildings()}
+                disabled={busy}
+              >
+                Kiểm tra lại trạng thái duyệt
+              </button>
+            }
+          />
+        </div>
+      );
+    }
 
-                <WashCycleCard
-                  key={`${selectedSummary.id}:${account.id}:${isSyncStale}`}
-                  buildingId={selectedSummary.id}
-                  cycles={isSyncStale ? null : myCycles}
-                  machineLabels={machineLabels}
-                  onRefresh={refreshSelectedBuilding}
-                  onSessionExpired={handleSessionExpired}
-                />
+    if (detailError) {
+      return (
+        <ErrorState
+          title="Không tải được dữ liệu tòa nhà"
+          message={detailError}
+          onRetry={triggerManualRefresh}
+          busy={busy}
+        />
+      );
+    }
 
-                <div className="bento-2">
-                  <QueuePanel
-                    buildingId={selectedSummary.id}
-                    accountId={account.id}
-                    entries={buildingDetail.queue}
-                    participation={isSyncStale ? 'UNKNOWN' : participation}
-                    onRefresh={refreshSelectedBuilding}
-                    onSessionExpired={handleSessionExpired}
-                  />
+    if (!buildingDetail || buildingDetail.id !== selectedSummary.id) {
+      return (
+        <div className="view-stack">
+          <SkeletonCard rows={3} />
+          <SkeletonCard rows={4} />
+        </div>
+      );
+    }
 
-                  {!isSyncStale ? (
-                    <QueueEstimate buildingId={selectedSummary.id} accountId={account.id} refreshKey={refreshKey} onSessionExpired={handleSessionExpired} />
-                  ) : null}
-                </div>
+    switch (effectiveView) {
+      case 'overview':
+        return (
+          <OverviewView
+            account={account}
+            summary={selectedSummary}
+            building={buildingDetail}
+            participation={isSyncStale ? 'UNKNOWN' : participation}
+            isSyncStale={isSyncStale}
+            holds={holds}
+            myHold={myHold}
+            holdHandover={holdHandover}
+            myCycles={isSyncStale ? null : myCycles}
+            pendingMembers={pendingMembers}
+            issues={issues}
+            serverNow={serverNow}
+            eta={snapshotEta}
+            onRefresh={refreshSelectedBuilding}
+            onSessionExpired={handleSessionExpired}
+            onNavigate={navigate}
+          />
+        );
 
-                <div className="panel">
-                  <div className="panel-head">
-                    <h3 className="panel-title"><WasherIcon /> Danh sách máy ({buildingDetail.machines.length}/30)</h3>
-                  </div>
-                  <p className="muted-note">
-                    Trạng thái &quot;Đang mở&quot; cho biết máy không bảo trì; quản lý xác nhận lồng giặt trống nếu máy bị kẹt sau bàn giao.
-                  </p>
-                  <div className="machine-grid">
-                    {buildingDetail.machines.map((m) => (
-                      <div key={m.id} className="machine-card">
-                        <div className="machine-card-head">
-                          <strong>
-                            <Link className="machine-card-link" href={`/buildings/${selectedSummary.id}/machines/${m.id}`}>
-                              <QrIcon /> {m.label} · Chi tiết/QR
-                            </Link>
-                          </strong>
-                          <span className={
-                            m.status === 'AVAILABLE'
-                              ? 'pill pill-ready'
-                              : m.status === 'RUNNING'
-                                ? 'pill pill-running'
-                                : m.status === 'NEEDS_CHECK'
-                                  ? 'pill pill-warn'
-                                  : 'pill pill-maint'
-                          }>
-                            {m.status === 'AVAILABLE'
-                              ? 'Đang mở'
-                              : m.status === 'RUNNING'
-                                ? 'Đang giặt'
-                                : m.status === 'NEEDS_CHECK'
-                                  ? 'Cần kiểm tra'
-                                  : 'Bảo trì'}
-                          </span>
-                        </div>
-                        {selectedSummary.role === 'MANAGER' && (
-                          <div className="machine-card-actions">
-                            <button
-                              type="button"
-                              className="btn btn-outline btn-sm"
-                              onClick={() => void handleToggleMaintenance(m)}
-                              disabled={actionsDisabled}
-                            >
-                              {m.status === 'MAINTENANCE' ? 'Mở lại máy' : 'Đánh dấu bảo trì'}
-                            </button>
-                            <ConfirmMachineFreeButton
-                              buildingId={selectedSummary.id}
-                              accountId={account.id}
-                              isManager={selectedSummary.role === 'MANAGER' && !isSyncStale}
-                              machine={m}
-                              hasActiveHold={!isSyncStale && holdsVerified ? holds.some((h) => h.machineId === m.id) : null}
-                              onRefresh={refreshSelectedBuilding}
-                              onSessionExpired={handleSessionExpired}
-                            />
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
+      case 'machines':
+        return (
+          <MachinesView
+            buildingId={selectedSummary.id}
+            buildingName={buildingDetail.name}
+            machines={buildingDetail.machines}
+            holds={holds}
+            holdsVerified={holdsVerified && !isSyncStale}
+            isManager={selectedSummary.role === 'MANAGER'}
+            onSessionExpired={handleSessionExpired}
+            onNavigate={navigate}
+          />
+        );
 
-                  {selectedSummary.role === 'MANAGER' && buildingDetail.machines.length < 30 && (
-                    <form className="inline-form" onSubmit={handleAddMachine}>
-                      <input
-                        type="text"
-                        required
-                        maxLength={60}
-                        value={newMachineLabel}
-                        onChange={(e) => setNewMachineLabel(e.target.value)}
-                        placeholder="Tên máy mới (vd: Máy tầng 2)"
-                        disabled={actionsDisabled}
-                      />
-                      <button type="submit" className="btn btn-outline" disabled={actionsDisabled}>
-                        Thêm máy
-                      </button>
-                    </form>
-                  )}
-                </div>
+      case 'queue':
+        return (
+          <QueueView
+            buildingId={selectedSummary.id}
+            buildingName={buildingDetail.name}
+            accountId={account.id}
+            entries={buildingDetail.queue}
+            participation={isSyncStale ? 'UNKNOWN' : participation}
+            isSyncStale={isSyncStale}
+            refreshKey={refreshKey}
+            initialEta={snapshotEta}
+            onRefresh={refreshSelectedBuilding}
+            onSessionExpired={handleSessionExpired}
+            onNavigate={navigate}
+          />
+        );
 
-                {!isSyncStale && (
-                  <QueueSwapPanel buildingId={selectedSummary.id} accountId={account.id} entries={buildingDetail.queue}
-                    refreshKey={refreshKey} onRefresh={refreshSelectedBuilding} onSessionExpired={handleSessionExpired} />
-                )}
+      case 'swaps':
+        return isSyncStale ? (
+          <ErrorState
+            title="Cần đồng bộ lại dữ liệu"
+            message="Tạm khóa thao tác đổi lượt cho đến khi đồng bộ thành công với máy chủ."
+            onRetry={triggerManualRefresh}
+            busy={busy}
+          />
+        ) : (
+          <SwapsView
+            buildingId={selectedSummary.id}
+            buildingName={buildingDetail.name}
+            accountId={account.id}
+            entries={buildingDetail.queue}
+            refreshKey={refreshKey}
+            onRefresh={refreshSelectedBuilding}
+            onSessionExpired={handleSessionExpired}
+          />
+        );
 
-                {selectedSummary.role === 'MANAGER' && !isSyncStale && <WashManagerPanel
-                  key={`manager:${selectedSummary.id}:${account.id}`}
-                  buildingId={selectedSummary.id}
-                  issues={issues}
-                  machineLabels={machineLabels}
-                  onRefresh={refreshSelectedBuilding}
-                  onSessionExpired={handleSessionExpired}
-                />}
+      case 'chat':
+        return (
+          <ChatView
+            buildingId={selectedSummary.id}
+            buildingName={buildingDetail.name}
+            accountId={account.id}
+            isManager={selectedSummary.role === 'MANAGER'}
+            onSessionExpired={handleSessionExpired}
+          />
+        );
 
-                {selectedSummary.role === 'MANAGER' ? (
-                  <div className="bento-2">
-                    <BuildingAdminPanel
-                      buildingId={selectedSummary.id}
-                      accountId={account.id}
-                      isManager={!isSyncStale}
-                      onRefresh={refreshSelectedBuilding}
-                      onSessionExpired={handleSessionExpired}
-                    />
-                    <MemberManagementPanel
-                      currentAccountId={account.id}
-                      busy={actionsDisabled}
-                      inviteToken={inviteToken}
-                      pendingMembers={pendingMembers}
-                      approvedMembers={approvedMembers}
-                      onCreateInvite={handleCreateInvite}
-                      onApproveMember={handleApproveMember}
-                      onChangeRole={handleChangeMemberRole}
-                    />
-                  </div>
-                ) : null}
-                </>}
-              </>
-            )}
+      case 'admin-members':
+        return (
+          <AdminMembersView
+            buildingId={selectedSummary.id}
+            buildingName={buildingDetail.name}
+            currentAccountId={account.id}
+            pendingMembers={pendingMembers}
+            approvedMembers={approvedMembers}
+            isSyncStale={isSyncStale}
+            busy={busy}
+            refreshKey={refreshKey}
+            onApproveMember={handleApproveMember}
+            onChangeRole={handleChangeMemberRole}
+            onRefresh={refreshSelectedBuilding}
+            onSessionExpired={handleSessionExpired}
+          />
+        );
+
+      case 'admin-invitations':
+        return (
+          <AdminInvitationsView
+            buildingId={selectedSummary.id}
+            buildingName={buildingDetail.name}
+            isSyncStale={isSyncStale}
+            busy={busy}
+            inviteToken={inviteToken}
+            refreshKey={refreshKey}
+            onCreateInvite={handleCreateInvite}
+            onClearInviteToken={() => setInviteToken(null)}
+            onRefresh={refreshSelectedBuilding}
+            onSessionExpired={handleSessionExpired}
+          />
+        );
+
+      case 'admin-machines':
+        return (
+          <AdminMachinesView
+            buildingId={selectedSummary.id}
+            buildingName={buildingDetail.name}
+            accountId={account.id}
+            machines={buildingDetail.machines}
+            holds={holds}
+            holdsVerified={holdsVerified}
+            isSyncStale={isSyncStale}
+            busy={busy}
+            onAddMachine={handleAddMachine}
+            onToggleMaintenance={handleToggleMaintenance}
+            onRefresh={refreshSelectedBuilding}
+            onSessionExpired={handleSessionExpired}
+          />
+        );
+
+      case 'admin-activity':
+        return (
+          <AdminActivityView
+            buildingId={selectedSummary.id}
+            buildingName={buildingDetail.name}
+            machineLabels={machineLabels}
+            refreshKey={refreshKey}
+            onSessionExpired={handleSessionExpired}
+          />
+        );
+
+      case 'admin-moderation':
+        return (
+          <AdminModerationView
+            buildingId={selectedSummary.id}
+            buildingName={buildingDetail.name}
+            issues={issues}
+            machineLabels={machineLabels}
+            refreshKey={refreshKey}
+            onRefresh={refreshSelectedBuilding}
+            onSessionExpired={handleSessionExpired}
+          />
+        );
+
+      default:
+        return null;
+    }
+  };
+
+  return (
+    <>
+      <NotificationToast message={notice} variant="success" onDismiss={() => setNotice(null)} />
+
+      <AppShell
+        account={account}
+        buildings={buildings}
+        selectedSummary={selectedSummary}
+        activeView={effectiveView}
+        pendingMembersCount={pendingMembers.length}
+        issuesCount={issues?.length ?? 0}
+        isSyncStale={isSyncStale}
+        syncError={syncError}
+        busy={busy}
+        onSelectBuilding={selectBuilding}
+        onNavigate={navigate}
+        onRefresh={triggerManualRefresh}
+        onOpenCreateBuilding={() => setCreateModalOpen(true)}
+        onOpenJoinBuilding={() => setJoinModalOpen(true)}
+        onLogout={() => void handleLogout()}
+      >
+        {error && (
+          <div className="alert alert-error" role="alert" style={{ marginBottom: 16 }}>
+            {error}
           </div>
-        </section>
-      )}
+        )}
+        {renderMainContent()}
+      </AppShell>
 
-      {account && (
-        <footer>
-          Giặt chung cư · Đóng trang không gia hạn giữ lượt 8 phút.
-        </footer>
-      )}
-    </main>
+      <CreateBuildingModal
+        open={createModalOpen}
+        busy={busy}
+        onClose={() => setCreateModalOpen(false)}
+        onCreate={handleCreateBuilding}
+      />
+
+      <JoinBuildingModal
+        open={joinModalOpen}
+        busy={busy}
+        onClose={() => setJoinModalOpen(false)}
+        onJoin={handleJoinByToken}
+      />
+    </>
   );
 }

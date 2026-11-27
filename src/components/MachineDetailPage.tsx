@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import AuthSection from './AuthSection';
+import { RefreshIcon, WasherIcon } from './Icons';
 import MachineHoldCard, { type MachineHoldView } from './MachineHoldCard';
 import WashHoldActions from './WashHoldActions';
 import WashCycleCard, { type WashCycleView } from './WashCycleCard';
@@ -98,11 +99,15 @@ function MachinePage({ buildingId, machineId }: { buildingId: string; machineId:
   }
   return <main className="shell">
     <header className="topbar">
-      <span className="mark" aria-hidden="true">◉</span>
-      <span>GIẶT CHUNG CƯ</span>
+      <Link className="topbar-brand" href={`/buildings/${buildingId}/machines`}>
+        <span className="mark" aria-hidden="true"><WasherIcon size={19} /></span>
+        <span>Giặt chung cư</span>
+      </Link>
       <div className="topbar-user">
-        <Link className="btn btn-outline btn-sm" href="/">Về danh sách tòa</Link>
-        <button type="button" className="btn btn-outline btn-sm" onClick={() => void refresh()}>Tải lại trạng thái máy</button>
+        <Link className="btn btn-outline btn-sm" href={`/buildings/${buildingId}/machines`}>Danh sách máy</Link>
+        <button type="button" className="btn btn-outline btn-sm" onClick={() => void refresh()}>
+          <RefreshIcon size={14} /> Làm mới
+        </button>
       </div>
     </header>
     <div className="panel" style={{ marginBottom: 16 }}>
