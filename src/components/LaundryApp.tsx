@@ -38,7 +38,8 @@ import type {
 } from '@/types/laundry';
 
 const VALID_STATES = new Set<QueueParticipation>(['NONE', 'WAITING', 'HELD', 'WASHING']);
-const POLL_INTERVAL_MS = 5000;
+const OPERATIONAL_POLL_MS = 12000;
+const BACKGROUND_POLL_MS = 30000;
 const STORAGE_BUILDING_KEY = 'laundry_selected_building_id';
 
 interface LaundryAppProps {
@@ -98,6 +99,7 @@ export default function LaundryApp({ initialBuildingId, initialView }: LaundryAp
   const selectedStatus = selectedSummary?.status;
   const detailRequestId = useRef(0);
   const activeManualRefreshCount = useRef(0);
+  const consecutiveSilentFailures = useRef(0);
   const buildingDetailFor = useRef<string | null>(null);
 
   const navigate = useCallback(
@@ -384,11 +386,30 @@ export default function LaundryApp({ initialBuildingId, initialView }: LaundryAp
           clearManagerState();
           setIssues([]);
         }
-        if (snapshot && account) setNotificationInput({ accountId: account.id, snapshot,
-          pendingMemberIds: notificationMembers, issueIds: notificationIssues });
-        setRefreshKey((value) => value + 1);
+        if (snapshot && account) {
+          setNotificationInput({
+            accountId: account.id,
+            snapshot,
+            pendingMemberIds: notificationMembers,
+            issueIds: notificationIssues,
+          });
+        }
+        consecutiveSilentFailures.current = 0;
+        if (!options?.silent) {
+          setRefreshKey((value) => value + 1);
+        }
       } catch (err) {
         if (requestId === detailRequestId.current) {
+          const isSuperseded = err instanceof Error && err.message === 'Refresh scope was replaced';
+          if (isSuperseded) throw err;
+
+          if (options?.silent) {
+            consecutiveSilentFailures.current += 1;
+            if (consecutiveSilentFailures.current < 2) {
+              return;
+            }
+          }
+
           setParticipation('UNKNOWN');
           setVerifiedHoldId(null);
           setHolds([]);
@@ -466,7 +487,17 @@ export default function LaundryApp({ initialBuildingId, initialView }: LaundryAp
       ? 'overview'
       : activeView;
 
-  // Polling chung do component cha sở hữu khi đang mở trang
+  // Polling chung có kiểm soát theo ngữ cảnh màn hình
+  const pollIntervalMs =
+    effectiveView === 'overview' ||
+    effectiveView === 'machines' ||
+    effectiveView === 'queue' ||
+    effectiveView === 'swaps' ||
+    effectiveView === 'admin-machines' ||
+    effectiveView === 'admin-moderation'
+      ? OPERATIONAL_POLL_MS
+      : BACKGROUND_POLL_MS;
+
   useEffect(() => {
     if (!account || !selectedId || !selectedRole || selectedStatus !== 'APPROVED') return;
 
@@ -490,10 +521,10 @@ export default function LaundryApp({ initialBuildingId, initialView }: LaundryAp
         /* loadBuildingDetail already closes stale action surfaces */
       } finally {
         running = false;
-        if (active) timer = window.setTimeout(() => void tick(), POLL_INTERVAL_MS);
+        if (active) timer = window.setTimeout(() => void tick(), pollIntervalMs);
       }
     };
-    timer = window.setTimeout(() => void tick(), POLL_INTERVAL_MS);
+    timer = window.setTimeout(() => void tick(), pollIntervalMs);
     const onVisibilityChange = () => {
       if (document.visibilityState === 'visible') void tick();
     };
@@ -504,7 +535,7 @@ export default function LaundryApp({ initialBuildingId, initialView }: LaundryAp
       window.clearTimeout(timer);
       document.removeEventListener('visibilitychange', onVisibilityChange);
     };
-  }, [account, selectedId, selectedRole, selectedStatus, loadBuildingDetail]);
+  }, [account, selectedId, selectedRole, selectedStatus, pollIntervalMs, loadBuildingDetail]);
 
   const handleRegister = async (username: string, displayName: string, password: string): Promise<boolean> => {
     setError(null);

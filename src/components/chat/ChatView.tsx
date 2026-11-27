@@ -86,6 +86,7 @@ export default function ChatView({
 
   const mounted = useRef(false);
   const inFlight = useRef(false);
+  const silentFailures = useRef(0);
   const controller = useRef<AbortController | null>(null);
   const requestId = useRef<string | null>(null);
   const composing = useRef(false);
@@ -123,7 +124,16 @@ export default function ChatView({
       signal,
     );
     if (!mounted.current || signal.aborted) return;
-    setMessages(result.items);
+    silentFailures.current = 0;
+    setMessages((prev) => {
+      if (
+        prev.length === result.items.length &&
+        prev.every((m, idx) => m.id === result.items[idx]?.id && m.hiddenAt === result.items[idx]?.hiddenAt)
+      ) {
+        return prev;
+      }
+      return result.items;
+    });
     setHasNext(result.hasNext);
     setPage(targetPage);
     setBlocked(false);
@@ -133,11 +143,12 @@ export default function ChatView({
   async function run(
     action?: { path: string; payload: object; successText?: string },
     targetPage = page,
+    options?: { silent?: boolean },
   ) {
     if (!mounted.current || inFlight.current) return;
     if (!action && document.hidden) return;
     inFlight.current = true;
-    setBusy(true);
+    if (!options?.silent) setBusy(true);
     if (action) {
       setBlocked(true);
       setMutating(true);
@@ -165,20 +176,24 @@ export default function ChatView({
       await load(targetPage, scope.signal);
     } catch (cause) {
       if (mounted.current && !scope.signal.aborted) {
+        if (options?.silent) {
+          silentFailures.current += 1;
+          if (silentFailures.current < 2) return;
+        }
         setBlocked(true);
         setError(cause instanceof Error ? cause.message : 'Không thể tải tin nhắn.');
       }
     } finally {
       if (mounted.current && controller.current === scope) {
         inFlight.current = false;
-        setBusy(false);
+        if (!options?.silent) setBusy(false);
         setMutating(false);
       }
     }
   }
 
   useEffect(() => {
-    poll.current = () => run();
+    poll.current = () => run(undefined, page, { silent: true });
   });
 
   useEffect(() => {
@@ -189,16 +204,15 @@ export default function ChatView({
     let timer: number;
     const tick = async () => {
       if (document.visibilityState === 'visible') await poll.current();
-      if (active) timer = window.setTimeout(() => void tick(), 5000);
+      if (active) timer = window.setTimeout(() => void tick(), 8000);
     };
-    timer = window.setTimeout(() => void tick(), 5000);
+    timer = window.setTimeout(() => void tick(), 8000);
 
     function onVisibility() {
       if (document.hidden) {
         controller.current?.abort();
-        setBlocked(true);
       } else {
-        void run();
+        void run(undefined, page, { silent: true });
       }
     }
     document.addEventListener('visibilitychange', onVisibility);
