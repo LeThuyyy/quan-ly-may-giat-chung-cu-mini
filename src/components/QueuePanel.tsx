@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { QueueIcon, RefreshIcon } from './Icons';
 
 export interface QueueEntryView {
   id: string;
@@ -122,8 +123,8 @@ function ScopedQueuePanel({ buildingId, accountId, entries, participation, onRef
   return (
     <section className="panel" aria-label="Hàng đợi của tòa" aria-busy={busy}>
       <div className="panel-head">
-        <h3>Hàng đợi chung</h3>
-        <button type="button" className="btn btn-outline btn-sm" disabled={busy} onClick={() => void refresh()}>Tải lại trạng thái</button>
+        <h3 className="panel-title"><QueueIcon /> Hàng đợi chung</h3>
+        <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => void refresh()}><RefreshIcon /> Tải lại trạng thái</button>
       </div>
       <p className="muted-note">Người chưa sẵn sàng giữ vị trí nhưng được bỏ qua khi giao máy. Vị trí không phải cam kết giờ nhận máy.</p>
       {ordered.length === 0 ? <p>Chưa có người đang chờ.</p> : (

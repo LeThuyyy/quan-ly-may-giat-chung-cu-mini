@@ -13,6 +13,7 @@ import WashManagerPanel from '@/components/WashManagerPanel';
 import ChatPanel from '@/components/ChatPanel';
 import QueueEstimate from '@/components/QueueEstimate';
 import QueueSwapPanel from '@/components/QueueSwapPanel';
+import { ChatIcon, QrIcon, RefreshIcon, WasherIcon } from '@/components/Icons';
 import Link from 'next/link';
 
 interface AccountView {
@@ -676,12 +677,14 @@ export default function LaundryApp() {
   return (
     <main className="shell">
       <header className="topbar">
-        <span className="mark" aria-hidden="true">◉</span>
-        <span>GIẶT CHUNG CƯ</span>
+        <span className="topbar-brand">
+          <span className="mark" aria-hidden="true"><WasherIcon size={20} /></span>
+          <span>GIẶT CHUNG CƯ</span>
+        </span>
         {account ? (
           <div className="topbar-user">
             <span className="badge">{account.displayName} (@{account.username})</span>
-            <button type="button" className="btn btn-outline" onClick={handleLogout} disabled={busy}>
+            <button type="button" className="btn btn-outline btn-sm" onClick={handleLogout} disabled={busy}>
               Đăng xuất
             </button>
           </div>
@@ -717,6 +720,7 @@ export default function LaundryApp() {
         />
       ) : (
         <section className="workspace">
+          <div className="sidebar">
           <div className="sidebar-buildings">
             <div className="panel">
               <h2>Tòa nhà của bạn</h2>
@@ -794,6 +798,7 @@ export default function LaundryApp() {
               </button>
             </form>
           </aside>
+          </div>
 
           <div className="main-pane">
             {!selectedSummary ? (
@@ -832,7 +837,7 @@ export default function LaundryApp() {
                       onClick={() => void loadBuildingDetail(selectedSummary).catch(() => {})}
                       disabled={busy}
                     >
-                      Làm mới
+                      <RefreshIcon /> Làm mới
                     </button>
                   </div>
                   <div className="status-strip" aria-label="Tóm tắt trạng thái">
@@ -874,31 +879,38 @@ export default function LaundryApp() {
                 </div>
 
                 <nav className="section-nav" aria-label="Mục tòa nhà">
-                  <button type="button" className="btn btn-outline" aria-pressed={section === 'laundry'} onClick={() => setSection('laundry')}>Giặt và hàng đợi</button>{' '}
-                  <button type="button" className="btn btn-outline" aria-pressed={section === 'chat'} onClick={() => setSection('chat')}>Trò chuyện</button>
+                  <button type="button" className="btn btn-outline" aria-pressed={section === 'laundry'} onClick={() => setSection('laundry')}>
+                    <WasherIcon size={16} /> Giặt và hàng đợi
+                  </button>
+                  <button type="button" className="btn btn-outline" aria-pressed={section === 'chat'} onClick={() => setSection('chat')}>
+                    <ChatIcon size={16} /> Trò chuyện
+                  </button>
                 </nav>
                 {section === 'chat' && <ChatPanel buildingId={selectedSummary.id} accountId={account.id}
                   isManager={selectedSummary.role === 'MANAGER'} onSessionExpired={handleSessionExpired} />}
                 {section === 'laundry' && <>
-                <MachineHoldCard
-                  buildingId={selectedSummary.id}
-                  accountId={account.id}
-                  hold={myHold}
-                  machineLabel={buildingDetail.machines.find((machine) => machine.id === myHold?.machineId)?.label}
-                  serverNow={serverNow}
-                  onRefresh={refreshSelectedBuilding}
-                  onSessionExpired={handleSessionExpired}
-                />
-
-                {myHold && <WashHoldActions
-                  key={`${selectedSummary.id}:${account.id}:${myHold.id}`}
-                  buildingId={selectedSummary.id}
-                  hold={myHold}
-                  handover={holdHandover}
-                  serverNow={serverNow}
-                  onRefresh={refreshSelectedBuilding}
-                  onSessionExpired={handleSessionExpired}
-                />}
+                {myHold ? (
+                  <div className="bento-2">
+                    <MachineHoldCard
+                      buildingId={selectedSummary.id}
+                      accountId={account.id}
+                      hold={myHold}
+                      machineLabel={buildingDetail.machines.find((machine) => machine.id === myHold?.machineId)?.label}
+                      serverNow={serverNow}
+                      onRefresh={refreshSelectedBuilding}
+                      onSessionExpired={handleSessionExpired}
+                    />
+                    <WashHoldActions
+                      key={`${selectedSummary.id}:${account.id}:${myHold.id}`}
+                      buildingId={selectedSummary.id}
+                      hold={myHold}
+                      handover={holdHandover}
+                      serverNow={serverNow}
+                      onRefresh={refreshSelectedBuilding}
+                      onSessionExpired={handleSessionExpired}
+                    />
+                  </div>
+                ) : null}
 
                 <WashCycleCard
                   key={`${selectedSummary.id}:${account.id}:${isSyncStale}`}
@@ -909,23 +921,25 @@ export default function LaundryApp() {
                   onSessionExpired={handleSessionExpired}
                 />
 
-                <QueuePanel
-                  buildingId={selectedSummary.id}
-                  accountId={account.id}
-                  entries={buildingDetail.queue}
-                  participation={isSyncStale ? 'UNKNOWN' : participation}
-                  onRefresh={refreshSelectedBuilding}
-                  onSessionExpired={handleSessionExpired}
-                />
+                <div className="bento-2">
+                  <QueuePanel
+                    buildingId={selectedSummary.id}
+                    accountId={account.id}
+                    entries={buildingDetail.queue}
+                    participation={isSyncStale ? 'UNKNOWN' : participation}
+                    onRefresh={refreshSelectedBuilding}
+                    onSessionExpired={handleSessionExpired}
+                  />
 
-                {!isSyncStale && <>
-                  <QueueEstimate buildingId={selectedSummary.id} accountId={account.id} refreshKey={refreshKey} onSessionExpired={handleSessionExpired} />
-                  <QueueSwapPanel buildingId={selectedSummary.id} accountId={account.id} entries={buildingDetail.queue}
-                    refreshKey={refreshKey} onRefresh={refreshSelectedBuilding} onSessionExpired={handleSessionExpired} />
-                </>}
+                  {!isSyncStale ? (
+                    <QueueEstimate buildingId={selectedSummary.id} accountId={account.id} refreshKey={refreshKey} onSessionExpired={handleSessionExpired} />
+                  ) : null}
+                </div>
 
                 <div className="panel">
-                  <h3>Danh sách máy ({buildingDetail.machines.length}/30)</h3>
+                  <div className="panel-head">
+                    <h3 className="panel-title"><WasherIcon /> Danh sách máy ({buildingDetail.machines.length}/30)</h3>
+                  </div>
                   <p className="muted-note">
                     Trạng thái &quot;Đang mở&quot; cho biết máy không bảo trì; quản lý xác nhận lồng giặt trống nếu máy bị kẹt sau bàn giao.
                   </p>
@@ -933,7 +947,11 @@ export default function LaundryApp() {
                     {buildingDetail.machines.map((m) => (
                       <div key={m.id} className="machine-card">
                         <div className="machine-card-head">
-                          <strong><Link className="machine-card-link" href={`/buildings/${selectedSummary.id}/machines/${m.id}`}>{m.label} · Chi tiết/QR</Link></strong>
+                          <strong>
+                            <Link className="machine-card-link" href={`/buildings/${selectedSummary.id}/machines/${m.id}`}>
+                              <QrIcon /> {m.label} · Chi tiết/QR
+                            </Link>
+                          </strong>
                           <span className={
                             m.status === 'AVAILABLE'
                               ? 'pill pill-ready'
@@ -953,7 +971,7 @@ export default function LaundryApp() {
                           </span>
                         </div>
                         {selectedSummary.role === 'MANAGER' && (
-                          <div className="queue-actions">
+                          <div className="machine-card-actions">
                             <button
                               type="button"
                               className="btn btn-outline btn-sm"
@@ -995,6 +1013,11 @@ export default function LaundryApp() {
                   )}
                 </div>
 
+                {!isSyncStale && (
+                  <QueueSwapPanel buildingId={selectedSummary.id} accountId={account.id} entries={buildingDetail.queue}
+                    refreshKey={refreshKey} onRefresh={refreshSelectedBuilding} onSessionExpired={handleSessionExpired} />
+                )}
+
                 {selectedSummary.role === 'MANAGER' && !isSyncStale && <WashManagerPanel
                   key={`manager:${selectedSummary.id}:${account.id}`}
                   buildingId={selectedSummary.id}
@@ -1004,26 +1027,27 @@ export default function LaundryApp() {
                   onSessionExpired={handleSessionExpired}
                 />}
 
-                <BuildingAdminPanel
-                  buildingId={selectedSummary.id}
-                  accountId={account.id}
-                  isManager={selectedSummary.role === 'MANAGER' && !isSyncStale}
-                  onRefresh={refreshSelectedBuilding}
-                  onSessionExpired={handleSessionExpired}
-                />
-
-                {selectedSummary.role === 'MANAGER' && (
-                  <MemberManagementPanel
-                    currentAccountId={account.id}
-                    busy={actionsDisabled}
-                    inviteToken={inviteToken}
-                    pendingMembers={pendingMembers}
-                    approvedMembers={approvedMembers}
-                    onCreateInvite={handleCreateInvite}
-                    onApproveMember={handleApproveMember}
-                    onChangeRole={handleChangeMemberRole}
-                  />
-                )}
+                {selectedSummary.role === 'MANAGER' ? (
+                  <div className="bento-2">
+                    <BuildingAdminPanel
+                      buildingId={selectedSummary.id}
+                      accountId={account.id}
+                      isManager={!isSyncStale}
+                      onRefresh={refreshSelectedBuilding}
+                      onSessionExpired={handleSessionExpired}
+                    />
+                    <MemberManagementPanel
+                      currentAccountId={account.id}
+                      busy={actionsDisabled}
+                      inviteToken={inviteToken}
+                      pendingMembers={pendingMembers}
+                      approvedMembers={approvedMembers}
+                      onCreateInvite={handleCreateInvite}
+                      onApproveMember={handleApproveMember}
+                      onChangeRole={handleChangeMemberRole}
+                    />
+                  </div>
+                ) : null}
                 </>}
               </>
             )}

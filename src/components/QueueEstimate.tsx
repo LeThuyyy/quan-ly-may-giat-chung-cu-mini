@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
+import { ClockIcon, RefreshIcon } from './Icons';
 
 export interface QueueEstimateView {
   state: 'READY' | 'UNREADY' | 'NOT_WAITING' | 'UNAVAILABLE';
@@ -37,8 +38,8 @@ function EstimatePanel({ buildingId, refreshKey = 0, onSessionExpired }: { build
   }, [buildingId, refreshKey, version]);
   return <section className="panel" aria-label="Ước tính tới lượt">
     <div className="panel-head">
-      <h3>Ước tính tới lượt</h3>
-      <button type="button" className="btn btn-outline btn-sm" disabled={busy} onClick={() => setVersion(v => v + 1)}>Tải lại ước tính</button>
+      <h3 className="panel-title"><ClockIcon /> Ước tính tới lượt</h3>
+      <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => setVersion(v => v + 1)}><RefreshIcon /> Tải lại ước tính</button>
     </div>
     {busy && <p className="muted-note" role="status">Đang tải ước tính…</p>}
     {error && <p className="alert alert-error" role="alert">{error}</p>}

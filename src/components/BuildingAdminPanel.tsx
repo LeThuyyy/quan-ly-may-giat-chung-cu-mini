@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { RefreshIcon, ShieldIcon } from './Icons';
 
 export interface BuildingAdminPanelProps {
   buildingId: string;
@@ -149,8 +150,8 @@ function ScopedAdminPanel({ buildingId, accountId, onRefresh, onSessionExpired }
   }
   return <section className="panel" aria-label="Quản trị tòa nhà" aria-busy={busy}>
     <div className="panel-head">
-      <h3>Quản trị tòa nhà</h3>
-      <button className="btn btn-outline btn-sm" type="button" disabled={busy || expired} onClick={() => void load(tab, page, true)}>Tải lại quản trị</button>
+      <h3 className="panel-title"><ShieldIcon /> Quản trị tòa nhà</h3>
+      <button className="btn btn-ghost btn-sm" type="button" disabled={busy || expired} onClick={() => void load(tab, page, true)}><RefreshIcon /> Tải lại quản trị</button>
     </div>
     <div className="action-row" aria-label="Mục quản trị">
       {([['invitations', 'Lời mời'], ['removed', 'Thành viên đã gỡ'], ['residents', 'Gỡ cư dân'], ['activity', 'Nhật ký hoạt động']] as const).map(([value, label]) =>
@@ -162,14 +163,14 @@ function ScopedAdminPanel({ buildingId, accountId, onRefresh, onSessionExpired }
     {!busy && !blocked && tab === 'invitations' && <ul className="queue-list">
       {snapshot.invitations.length === 0 && <li className="muted-note">Chưa có lời mời.</li>}
       {snapshot.invitations.map((invite) => <li className="queue-row" key={invite.id}>
-        <span><strong>{invite.id}</strong> — {({ ACTIVE: 'Còn hiệu lực', EXPIRED: 'Hết hạn', REVOKED: 'Đã thu hồi' })[invite.status] ?? invite.status}<br />Tạo: {formatAdminTime(invite.createdAt)} · Hết hạn: {formatAdminTime(invite.expiresAt)}{invite.revokedAt && <> · Thu hồi: {formatAdminTime(invite.revokedAt)}</>}</span>
+        <span><code className="id-chip">{invite.id}</code> — <span className={invite.status === 'ACTIVE' ? 'pill pill-ready' : 'pill pill-wait'}>{({ ACTIVE: 'Còn hiệu lực', EXPIRED: 'Hết hạn', REVOKED: 'Đã thu hồi' })[invite.status] ?? invite.status}</span><br /><span className="muted-note">Tạo: {formatAdminTime(invite.createdAt)} · Hết hạn: {formatAdminTime(invite.expiresAt)}{invite.revokedAt && <> · Thu hồi: {formatAdminTime(invite.revokedAt)}</>}</span></span>
         <button className="btn btn-outline btn-sm" type="button" disabled={disabled || invite.status !== 'ACTIVE'} onClick={() => void mutate(`invitations/${encodeURIComponent(invite.id)}/revoke`, 'POST', 'Đã thu hồi lời mời.')}>Thu hồi</button>
       </li>)}
     </ul>}
     {!busy && !blocked && tab === 'removed' && <>
       <p className="muted-note">Khôi phục chỉ chuyển về Chờ duyệt. Hãy duyệt riêng tại mục quản lý thành viên.</p>
       <ul className="queue-list">{snapshot.members.length === 0 && <li className="muted-note">Không có thành viên đã gỡ.</li>}{snapshot.members.map((member) => <li className="queue-row" key={member.id}>
-        <span>{member.displayName} ({member.username})</span>
+        <span><strong>{member.displayName}</strong> (@{member.username})</span>
         <button className="btn btn-outline btn-sm" type="button" disabled={disabled || member.status !== 'REMOVED'} onClick={() => void mutate(`members/${encodeURIComponent(member.id)}/restore`, 'POST', 'Đã khôi phục về Chờ duyệt; cần duyệt riêng.')}>Khôi phục</button>
       </li>)}</ul>
     </>}
@@ -177,19 +178,19 @@ function ScopedAdminPanel({ buildingId, accountId, onRefresh, onSessionExpired }
       <label className="field">Cư dân cần gỡ<select aria-label="Cư dân cần gỡ" value={selected} disabled={disabled} onChange={(event) => { setSelected(event.target.value); setConfirming(false); }}>
         <option value="">Chọn cư dân</option>{snapshot.members.map((member) => <option key={member.id} value={member.id}>{member.displayName} ({member.username})</option>)}
       </select></label>
-      <button className="btn btn-danger" type="button" disabled={disabled || !resident} onClick={() => setConfirming(true)}>Gỡ khỏi tòa</button>
+      <button className="btn btn-danger btn-sm" type="button" disabled={disabled || !resident} onClick={() => setConfirming(true)}>Gỡ khỏi tòa</button>
       {confirming && resident && <div className="swap-subpanel" role="group" aria-label="Xác nhận gỡ cư dân">
         <p>Gỡ {resident.displayName} khỏi tòa? Lượt chờ (WAITING) sẽ kết thúc; lượt giữ (HELD) sẽ bị hủy và máy được xét cấp lại. Không thể gỡ khi đang giặt (WASHING) hoặc còn mẻ chưa hoàn tất; máy chủ sẽ kiểm tra.</p>
         <div className="action-row">
-          <button className="btn btn-primary" type="button" disabled={disabled} onClick={() => void mutate(`members/${encodeURIComponent(resident.id)}`, 'DELETE', 'Đã gỡ cư dân khỏi tòa.')}>Xác nhận gỡ</button>{' '}
-          <button className="btn btn-outline" type="button" disabled={disabled} onClick={() => setConfirming(false)}>Hủy</button>
+          <button className="btn btn-primary btn-sm" type="button" disabled={disabled} onClick={() => void mutate(`members/${encodeURIComponent(resident.id)}`, 'DELETE', 'Đã gỡ cư dân khỏi tòa.')}>Xác nhận gỡ</button>
+          <button className="btn btn-outline btn-sm" type="button" disabled={disabled} onClick={() => setConfirming(false)}>Hủy</button>
         </div>
       </div>}
     </>}
     {!busy && !blocked && tab === 'activity' && <ul className="queue-list">{snapshot.activity.length === 0 && <li className="muted-note">Chưa có hoạt động.</li>}{snapshot.activity.map((item) => <li className="queue-row" key={item.id}>
-      <span><strong>{item.action}</strong> — {formatAdminTime(item.occurredAt)}<br />Người thực hiện: {item.actorId ?? 'Hệ thống'} · Đối tượng: {item.targetId ?? '—'} · Máy: {item.machineId ?? '—'}<br />Trước: {item.beforeState ?? '—'} · Sau: {item.afterState ?? '—'}</span>
+      <span><strong>{item.action}</strong> — <span className="muted-note">{formatAdminTime(item.occurredAt)}</span><br /><span className="muted-note">Người thực hiện: {item.actorId ?? 'Hệ thống'} · Đối tượng: {item.targetId ?? '—'} · Máy: {item.machineId ?? '—'}<br />Trước: {item.beforeState ?? '—'} · Sau: {item.afterState ?? '—'}</span></span>
     </li>)}</ul>}
-    {tab !== 'residents' && <div className="action-row">
+    {tab !== 'residents' && <div className="pagination-bar" style={{ marginTop: 'auto' }}>
       <button className="btn btn-outline btn-sm" type="button" disabled={disabled || page === 0} onClick={() => navigate(tab, page - 1)}>Trang trước</button>
       <span>Trang {page + 1}</span>
       <button className="btn btn-outline btn-sm" type="button" disabled={disabled || !snapshot.hasNext} onClick={() => navigate(tab, page + 1)}>Trang sau</button>

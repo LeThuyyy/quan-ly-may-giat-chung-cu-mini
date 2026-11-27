@@ -120,31 +120,31 @@ function ScopedConfirmFree({ buildingId, machine, hasActiveHold, onRefresh, onSe
     : !eligible ? 'Trạng thái máy chưa hỗ trợ xác nhận trống.' : null;
 
   return (
-    <div role="group" aria-label={`Xác nhận máy trống: ${machine.label}`} aria-busy={busy}>
-      <button type="button" className="btn btn-outline" disabled={disabled} aria-expanded={expanded} aria-controls={panelId}
+    <div role="group" aria-label={`Xác nhận máy trống: ${machine.label}`} aria-busy={busy} style={{ display: 'contents' }}>
+      <button type="button" className="btn btn-outline btn-sm" disabled={disabled} aria-expanded={expanded} aria-controls={panelId}
         onClick={() => { setExpanded((value) => !value); setChecked(false); }}>
         {completed ? 'Đã ghi nhận máy trống' : 'Xác nhận máy trống'}
       </button>
-      {blockedReason && <p className="muted-note">{blockedReason}</p>}
+      <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => void refresh()}>Tải lại trạng thái</button>
+      {blockedReason && <p className="muted-note" style={{ width: '100%', margin: 0 }}>{blockedReason}</p>}
       {expanded && (
-        <div id={panelId}>
+        <div id={panelId} className="swap-subpanel" style={{ width: '100%', margin: '4px 0 0' }}>
           <p>Chỉ xác nhận sau khi đã kiểm tra thực tế {machine.label}: máy đã dừng, lồng giặt trống và không còn đồ chờ bàn giao. Đồng hồ về 0 không chứng minh máy đã dừng.</p>
           <p className="muted-note">Thao tác này có thể giao máy ngay và bắt đầu hạn 8 phút cho người sẵn sàng đầu tiên. Không dùng để kết thúc hoặc bỏ qua mẻ giặt/bàn giao.</p>
-          <label htmlFor={confirmationId}>
-            <input id={confirmationId} type="checkbox" checked={checked} disabled={disabled} onChange={(event) => setChecked(event.target.checked)} />{' '}
-            Tôi đã kiểm tra tại chỗ: máy đã dừng và lồng giặt trống
+          <label className="checkbox-label" htmlFor={confirmationId}>
+            <input id={confirmationId} type="checkbox" checked={checked} disabled={disabled} onChange={(event) => setChecked(event.target.checked)} />
+            <span>Tôi đã kiểm tra tại chỗ: máy đã dừng và lồng giặt trống</span>
           </label>
-          <div>
-            <button type="button" className="btn btn-primary" disabled={disabled || !checked} onClick={() => void confirm()}>
+          <div className="action-row">
+            <button type="button" className="btn btn-primary btn-sm" disabled={disabled || !checked} onClick={() => void confirm()}>
               {busy ? 'Đang xử lý…' : 'Ghi nhận máy trống'}
-            </button>{' '}
-            <button type="button" className="btn btn-outline" disabled={busy} onClick={() => { setExpanded(false); setChecked(false); }}>Hủy</button>
+            </button>
+            <button type="button" className="btn btn-outline btn-sm" disabled={busy} onClick={() => { setExpanded(false); setChecked(false); }}>Hủy</button>
           </div>
         </div>
       )}
-      {notice && <p role="status">{notice}</p>}
-      {error && <p role="alert" className="alert alert-error">{error}</p>}
-      <button type="button" className="btn btn-outline" disabled={busy} onClick={() => void refresh()}>Tải lại trạng thái</button>
+      {notice && <p className="alert alert-ok" role="status" style={{ width: '100%', margin: 0 }}>{notice}</p>}
+      {error && <p role="alert" className="alert alert-error" style={{ width: '100%', margin: 0 }}>{error}</p>}
     </div>
   );
 }

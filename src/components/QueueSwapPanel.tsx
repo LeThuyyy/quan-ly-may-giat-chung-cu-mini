@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import type { QueueEntryView } from './QueuePanel';
+import { RefreshIcon, SwapIcon } from './Icons';
 interface Swap { id: string; senderId: string; recipientId: string; senderEntryId: string; recipientEntryId: string; expiresAt: string; status: string }
 interface SwapPage { items: Swap[]; page: number; size: number; hasNext: boolean }
 type View = 'pending' | 'history';
@@ -82,8 +83,8 @@ function SwapScope({ buildingId, accountId, entries, refreshKey = 0, onRefresh, 
   }
   return <section className="panel" aria-label="Đổi lượt trong hàng">
     <div className="panel-head">
-      <h3>Đổi lượt</h3>
-      <button type="button" className="btn btn-outline btn-sm" disabled={busy} onClick={() => void run()}>Tải lại lời mời</button>
+      <h3 className="panel-title"><SwapIcon /> Đổi lượt</h3>
+      <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => void run()}><RefreshIcon /> Tải lại lời mời</button>
     </div>
     <p className="muted-note">Chỉ đổi đúng hai vị trí đang chờ, không đổi Sẵn sàng. Lời mời có hiệu lực 10 phút; nhận máy hoặc rời hàng làm lời mời mất hiệu lực.</p>
     {targets.length > 0 && <div className="swap-subpanel">
@@ -91,19 +92,19 @@ function SwapScope({ buildingId, accountId, entries, refreshKey = 0, onRefresh, 
         <option value="">Chọn người đổi lượt</option>{targets.map(e => <option key={e.id} value={e.id}>{e.displayName} · vị trí {sorted.indexOf(e)+1}</option>)}
       </select></label>
       <p className="muted-note">Bạn ở vị trí {ownIndex+1}; đồng ý sẽ hoán đổi với vị trí {selected ? sorted.findIndex(e=>e.id===selected)+1 : 'được chọn'}.</p>
-      <button type="button" className="btn btn-primary" disabled={disabled || hasOutgoing || !targets.some(e=>e.id===selected)} onClick={() => void run('create')}>Gửi lời mời đổi lượt</button>
+      <button type="button" className="btn btn-primary btn-sm" disabled={disabled || hasOutgoing || !targets.some(e=>e.id===selected)} onClick={() => void run('create')}>Gửi lời mời đổi lượt</button>
     </div>}
     {hasOutgoing && <p className="muted-note">Bạn đã có một lời mời đang chờ.</p>}
     <section className="swap-subpanel" aria-label="Lời mời bạn đã gửi đang chờ"><h4>Lời mời bạn đã gửi đang chờ</h4>
-      {outgoing.length ? <ul className="queue-list">{outgoing.map(row)}</ul> : <p className="muted-note">Không có lời mời gửi đang chờ.</p>}
+      {outgoing.length ? <ul className="queue-list">{outgoing.map(row)}</ul> : <p className="muted-note" style={{ margin: 0 }}>Không có lời mời gửi đang chờ.</p>}
     </section>
     {error && <p className="alert alert-error" role="alert">{error}</p>}
     <div className="action-row">
-      <button type="button" className="btn btn-outline btn-sm" disabled={disabled} aria-pressed={view === 'pending'} onClick={() => void run(undefined, undefined, 'pending', 0)}>Lời mời đang chờ</button>{' '}
+      <button type="button" className="btn btn-outline btn-sm" disabled={disabled} aria-pressed={view === 'pending'} onClick={() => void run(undefined, undefined, 'pending', 0)}>Lời mời đang chờ</button>
       <button type="button" className="btn btn-outline btn-sm" disabled={disabled} aria-pressed={view === 'history'} onClick={() => void run(undefined, undefined, 'history', 0)}>Lịch sử đổi lượt</button>
     </div>
     <ul className="queue-list">{swaps.filter(s => !outgoingIds.has(s.id)).map(row)}</ul>
-    <div className="action-row" aria-label="Phân trang lời mời">
+    <div className="pagination-bar" aria-label="Phân trang lời mời">
       <button type="button" className="btn btn-outline btn-sm" disabled={disabled || page === 0} onClick={() => void run(undefined, undefined, view, page - 1)}>Trang lời mời trước</button>
       <span>Trang {page + 1}</span>
       <button type="button" className="btn btn-outline btn-sm" disabled={disabled || !hasNext} onClick={() => void run(undefined, undefined, view, page + 1)}>Trang lời mời sau</button>

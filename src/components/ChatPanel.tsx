@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { ChatIcon, RefreshIcon } from './Icons';
 
 export type ChatMessage = { id: string; authorId: string; displayName: string; body: string | null; sentAt: string; hiddenAt: string | null };
 export type ChatReport = { id: string; messageId: string; reporterId: string; reasonCode: string; reportedAt: string };
@@ -96,35 +97,47 @@ function ChatScope({ buildingId, isManager = false, onSessionExpired }: ChatPane
   }
   return <section className="panel" aria-label="Trò chuyện tòa nhà">
     <div className="panel-head">
-      <h2>Trò chuyện tòa nhà</h2>
-      <button type="button" className="btn btn-outline btn-sm" disabled={busy} onClick={() => void run()}>Tải lại trò chuyện</button>
+      <h2 className="panel-title"><ChatIcon size={20} /> Trò chuyện tòa nhà</h2>
+      <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => void run()}><RefreshIcon /> Tải lại trò chuyện</button>
     </div>
     <p className="muted-note">Tin nhắn văn bản được lưu 30 ngày. Báo cáo không tự động ẩn tin nhắn.</p>
     {error && <p className="alert alert-error" role="alert">{error}</p>}
-    <ul className="chat-list">{messages.map(message => <li className="chat-item" key={message.id}>
-      <div className="chat-item-head">
-        <strong>{message.displayName}</strong>
-        <time dateTime={message.sentAt}>{new Date(message.sentAt).toLocaleString('vi-VN')}</time>
+    {messages.length === 0 ? (
+      <p className="muted-note">Chưa có tin nhắn nào trong tòa. Hãy bắt đầu cuộc trò chuyện!</p>
+    ) : (
+      <ul className="chat-list">{messages.map(message => <li className="chat-item" key={message.id}>
+        <div className="chat-item-head">
+          <strong>{message.displayName}</strong>
+          <time dateTime={message.sentAt}>{new Date(message.sentAt).toLocaleString('vi-VN')}</time>
+        </div>
+        <p style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', margin: 0 }}>{message.hiddenAt ? 'Tin nhắn đã bị ẩn.' : message.body}</p>
+        {!message.hiddenAt && <div className="action-row" style={{ margin: '4px 0 0' }}>
+          <button type="button" className="btn btn-ghost btn-sm" disabled={disabled} onClick={() => void run({ path: `${base}/messages/${message.id}/report`, payload: { reasonCode: reason } })}>Báo cáo tin nhắn của {message.displayName}</button>
+          {isManager && <button type="button" className="btn btn-danger btn-sm" disabled={disabled} onClick={() => void run({ path: `${base}/messages/${message.id}/hide`, payload: { reasonCode: reason } })}>Ẩn tin nhắn của {message.displayName}</button>}
+        </div>}
+      </li>)}</ul>
+    )}
+    <div className="chat-toolbar">
+      <label className="field"><span>Lý do báo cáo / ẩn</span>
+        <select value={reason} onChange={event => setReason(event.target.value)} disabled={disabled}>
+          <option value="SPAM">Spam</option><option value="ABUSE">Lạm dụng</option><option value="OTHER">Khác</option>
+        </select>
+      </label>
+      <div className="action-row" style={{ margin: 0 }}>
+        <button type="button" className="btn btn-outline btn-sm" disabled={busy || page === 0} onClick={() => void run(undefined, page - 1)}>Trang trước</button>
+        <button type="button" className="btn btn-outline btn-sm" disabled={busy || !hasNext} onClick={() => void run(undefined, page + 1)}>Trang sau</button>
       </div>
-      <p style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{message.hiddenAt ? 'Tin nhắn đã bị ẩn.' : message.body}</p>
-      {!message.hiddenAt && <div className="action-row">
-        <button type="button" className="btn btn-outline btn-sm" disabled={disabled} onClick={() => void run({ path: `${base}/messages/${message.id}/report`, payload: { reasonCode: reason } })}>Báo cáo tin nhắn của {message.displayName}</button>
-        {isManager && <button type="button" className="btn btn-danger btn-sm" disabled={disabled} onClick={() => void run({ path: `${base}/messages/${message.id}/hide`, payload: { reasonCode: reason } })}>Ẩn tin nhắn của {message.displayName}</button>}
-      </div>}
-    </li>)}</ul>
-    <label className="field">Lý do báo cáo / ẩn <select value={reason} onChange={event => setReason(event.target.value)} disabled={disabled}>
-      <option value="SPAM">Spam</option><option value="ABUSE">Lạm dụng</option><option value="OTHER">Khác</option>
-    </select></label>
-    {isManager && <section className="swap-subpanel" aria-label="Báo cáo tin nhắn"><h3>Báo cáo</h3><ul className="queue-list">{reports.map(report => <li className="queue-row" key={report.id}>
-      <span>Tin {report.messageId} — {report.reasonCode}</span>
-      <button type="button" className="btn btn-danger btn-sm" disabled={disabled} onClick={() => void run({ path: `${base}/messages/${report.messageId}/hide`, payload: { reasonCode: reason } })}>Ẩn tin được báo cáo</button>
-    </li>)}</ul></section>}
-    <div className="action-row">
-      <button type="button" className="btn btn-outline btn-sm" disabled={busy || page === 0} onClick={() => void run(undefined, page - 1)}>Trang trước</button>
-      <button type="button" className="btn btn-outline btn-sm" disabled={busy || !hasNext} onClick={() => void run(undefined, page + 1)}>Trang sau</button>
     </div>
+    {isManager && <section className="swap-subpanel" aria-label="Báo cáo tin nhắn"><h4>Báo cáo</h4>
+      {reports.length === 0 ? <p className="muted-note" style={{ margin: 0 }}>Không có báo cáo nào.</p> : (
+        <ul className="queue-list" style={{ margin: 0 }}>{reports.map(report => <li className="queue-row" key={report.id}>
+          <span>Tin <code className="id-chip">{report.messageId}</code> — {report.reasonCode}</span>
+          <button type="button" className="btn btn-danger btn-sm" disabled={disabled} onClick={() => void run({ path: `${base}/messages/${report.messageId}/hide`, payload: { reasonCode: reason } })}>Ẩn tin được báo cáo</button>
+        </li>)}</ul>
+      )}
+    </section>}
     <div className="chat-composer">
-      <label className="field">Tin nhắn <textarea value={draft} maxLength={1000} disabled={mutating || blocked} placeholder="Nhập nội dung trao đổi chung trong tòa…" onChange={event => { setDraft(event.target.value); requestId.current = null; }} /></label>
+      <label className="field"><span>Tin nhắn</span><textarea value={draft} maxLength={1000} disabled={mutating || blocked} placeholder="Nhập nội dung trao đổi chung trong tòa…" onChange={event => { setDraft(event.target.value); requestId.current = null; }} /></label>
       <button type="button" className="btn btn-primary" disabled={disabled || !draft.trim()} onClick={send}>Gửi tin nhắn</button>
     </div>
   </section>;
