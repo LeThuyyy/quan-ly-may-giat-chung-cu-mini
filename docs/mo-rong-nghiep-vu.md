@@ -12,6 +12,12 @@ Baseline: develop `7821931`. Nhánh `feature/business-expansion` được chuẩ
 - Chat: GET/POST `/chat/messages`; POST `/chat/messages/{messageId}/report|hide`; GET `/chat/reports` quản lý. Văn bản 1–1000 ký tự, cooldown 5 giây/tài khoản/tòa, UUID retry, báo cáo không auto-hide. Hidden body=null, tombstone. Chỉ APPROVED, lưu30ngày, job dọn theo batch. Chat tab riêng, read polling5giây khi đang hiện; không ghi trạng thái giặt.
 - Nhật ký: GET `/activity?page=0&size=20&type=&machineId=`, chỉ quản lý, lưu90ngày; event ghi cùng transaction (MANDATORY), rollback không giữ event giả, tác vụ hệ thống actorId=null. Chỉ allowlist trạng thái/UUID, không token/body chat. UI quản trị có pagination, chưa có filter UI (API hỗ trợ).
 
+## Web Push — thông báo giao lượt trên thiết bị
+
+- Gửi khi Java commit hold mới, không gửi trong transaction khóa tòa; outbox và subscription được lưu DB. Rollback allocation không tạo thông báo; sender kiểm tra hold/quyền còn hiệu lực và revision thiết bị trước mỗi lần gửi, giới hạn retry/TTL, gỡ404/410. Push scheduler riêng không chặn job deadline.
+- Chrome PC và iPhone iOS16.4+ đã thêm Home Screen: bật/tắt theo thiết bị trong Tài khoản; không tự xin quyền hoặc đăng ký tài khoản mới chỉ vì browser đã cho phép. Thông báo là mời **kiểm tra máy**, không chứng minh trống và không gia hạn8phút. Chưa gửi nhắc sắp hết hạn qua push.
+- Cần3biếnVAPID, HTTPS và backend hoạt động; Render Free ngủ có thể trễ. Chưa nghiệm thu nhận qua Apple/FCM/iPhone thật. Hướng dẫn và giới hạn: [Web Push](web-push.md).
+
 ## Nền tảng được sửa
 
 BuildingAccessService repository-only: các mutation giặt/cấp máy kiểm tra membership sau khóa tòa, chặn race removal. UI quản trị/chat/swap có scope/unmount guard. Wash components dùng scoped fetch/refresh để phản hồi mutation cũ không tác động phiên mới. Polling vận hành đổi sang completion-scheduled, tránh interval chồng lặp.

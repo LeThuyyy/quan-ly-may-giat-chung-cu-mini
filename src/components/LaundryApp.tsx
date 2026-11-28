@@ -48,6 +48,7 @@ interface LaundryAppProps {
 }
 
 import { apiJson } from '@/lib/api-json';
+import { logoutWithDevicePush } from '@/lib/web-push';
 
 function syncBrowserUrl(buildingId: string | null, view: AppView) {
   if (typeof window === 'undefined') return;
@@ -583,7 +584,11 @@ export default function LaundryApp({ initialBuildingId, initialView }: LaundryAp
     setError(null);
     setNotice(null);
     try {
-      await apiJson('/api/auth/logout', { method: 'POST' });
+      const { result, warning } = await logoutWithDevicePush(() => apiJson('/api/auth/logout', { method: 'POST' }));
+      if (!result.ok && result.status !== 401) {
+        setError(result.error ?? 'Chưa đăng xuất được. Vui lòng thử lại.');
+        return;
+      }
       detailRequestId.current += 1;
       resetBuildingSnapshot();
       setAccount(null);
@@ -595,7 +600,9 @@ export default function LaundryApp({ initialBuildingId, initialView }: LaundryAp
       } catch {
         // Ignore storage error.
       }
-      setNotice('Đã đăng xuất.');
+      setNotice(warning ?? 'Đã đăng xuất.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Chưa đăng xuất được. Vui lòng thử lại.');
     } finally {
       setBusy(false);
     }

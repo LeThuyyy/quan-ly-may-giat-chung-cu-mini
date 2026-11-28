@@ -2,6 +2,16 @@
 
 > Bắt đầu bằng file này và `git status --short --branch`. Chỉ mở các file liên quan tác vụ; không coi nội dung này là quyền phê duyệt merge/push.
 
+## WEB PUSH — 2026-11-28
+
+- Nhánh `feature/web-push-notifications` từ develop `11dc64c`; giữ thay đổi `CLAUDE.md` của lượt `/init` trước đó ngoài commit tính năng. Người dùng đã yêu cầu đưa lên Render; đang chuẩn bị PR/CI vào develop. Chưa cấu hình khóa trên Render, phiên hiện tại không có Render API/CLI credentials.
+- Thêm PWA manifest, PNG Home Screen icons, service worker chỉ push/click (không cache dữ liệu), mục bật/tắt trong Tài khoản cho iPhone iOS16.4+ đã cài Home Screen và Chrome PC; không tự xin quyền khi tải trang.
+- Java lưu subscription theo tài khoản và outbox cùng transaction giao hold; sender xử lý sau commit, TTL theo hạn hold, giới hạn retry, kiểm tra quyền/hold/revision và gỡ endpoint404/410. Không tự suy máy trống; thông báo là mời kiểm tra máy.
+- Có env `WEB_PUSH_PUBLIC_KEY`, `WEB_PUSH_PRIVATE_KEY`, `WEB_PUSH_SUBJECT`; chưa cấu hình thì tắt sạch. Script `scripts/generate-web-push-keys.mjs` tạo cặp khóa trên máy; không lưu khóa riêng vào repo. Chi tiết ở `docs/web-push.md`.
+- Kiểm chứng cuối: `npm run check` đạt docs/lint/typecheck và **291/291test**, `npm run build -- --webpack` exit0 (WASM fallback do nativeSWC Windows không nạp được). Java tích hợp `mvn -B -f backend/pom.xml test` **106/106**, 0failure/error/skipped, JDK25 compile release21 (không phải runtimeJDK21). `clean test` ở repo chính bị khóa JAR của backend8080 đang chạy; không kill server/đụng DB để ép clean. Test gồm nhiều thiết bị, tắt riêng thiết bị, rollback, hold hết hạn, retry, CSRF/quyền, chuẩn bị cryptoApple và scheduler độc lập.
+- Browser smoke production build cuối: **6/6kịch bản** desktop1440/mobile360/390 với API/permission mocked; không overflow/console/pageerror, không xin quyền trước bấm, nútpush44px. Tài nguyênPWA/đăng kýSW thật, không gửi/subscribe push. Ảnh/results: `%TEMP%/web-push-qa-3015/`; đã dừng riêng QA3015. Shell cũ còn vài nút32–38px và contrast nhãn4.17/4.45:1, chưa audit/fix toàn shell.
+- Chưa gửi qua Apple/FCM thật, chưa nghiệm thu iPhone thật. Render Free ngủ vẫn làm chậm job; không hứa nhận đúng giờ hay exactly-once. Không tự đổi plan/deploy/dữ liệu.
+
 ## FRONTEND FINALIZATION / NOTIFICATIONS — 2026-11-28
 
 - Tiếp tục trên `fix/final-integration-verification`, nền develop `9df0dd3`; không redesign hoặc deploy.

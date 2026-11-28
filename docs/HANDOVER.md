@@ -1,5 +1,12 @@
 # Frontend finalization — milestone 28/11/2026
 
+## Bổ sung Web Push — 28/11/2026
+
+- Nhánh hiện tại `feature/web-push-notifications`, nềndevelop `11dc64c`; người dùng yêu cầu phát hành, đang chuẩn bị PR/CI vào develop; chưa cấu hình VAPID trên Render. Mục milestone cũ phía dưới là lịch sử, không phải trạng thái nhánh mới.
+- Đã thêm đăng ký thiết bị và outbox Java sau giao lượt, scheduler gửi riêng, PWA/serviceworker và mục Tài khoản cho iPhoneHomeScreen/ChromePC. Cấu hình và nghiệm thu thiết bị thật: [Web Push](web-push.md).
+- Kiểm chứng local cuối: frontend291/291 + docs/lint/typecheck; webpack productionbuild exit0; Java106/106 bằng JDK25 compile release21. Clean ở repo chính bị JAR server đang chạy khóa, đã chạy `test` thay vì kill server. Chưa nghiệm thu Java21 runtime/PostgreSQL/Apple hoặc FCM thật.
+- Browser smoke đã kiểm tra6trạng thái desktop/mobile bằng mockAPI/permission, tài nguyênPWA thật; không gọi subscription/send thật. Các vấn đề a11y của shell cũ và các backlog bên dưới không được coi đã giải quyết toàn bộ.
+
 ## Baseline và phạm vi
 
 Nhánh làm việc `fix/final-integration-verification` từ develop `9df0dd3`. Giữ AppShell/sidebar/navigation/design system hiện có, không redesign lại. Chưa commit/push/deploy. Hai tài liệu local `docs/phan-cong-va-deadline.md` và tệp Word tạm không thuộc thay đổi.

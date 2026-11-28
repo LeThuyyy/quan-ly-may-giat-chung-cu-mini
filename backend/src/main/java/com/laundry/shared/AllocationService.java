@@ -27,14 +27,15 @@ public class AllocationService {
     private final BuildingAccessService access;
     private final ActivityService activity;
     private final SwapLifecycle swaps;
+    private final PushOutboxService push;
 
     public AllocationService(BuildingRepository buildings, MembershipRepository memberships,
                              AccountRepository accounts, QueueEntryRepository queue,
                              MachineRepository machines, MachineHoldRepository holds, Clock clock, WashCycleRepository cycles,
-                             BuildingAccessService access, ActivityService activity, SwapLifecycle swaps) {
+                             BuildingAccessService access, ActivityService activity, SwapLifecycle swaps, PushOutboxService push) {
         this.buildings = buildings; this.memberships = memberships; this.accounts = accounts;
         this.queue = queue; this.machines = machines; this.holds = holds; this.clock = clock; this.cycles = cycles;
-        this.access=access; this.activity=activity; this.swaps=swaps;
+        this.access=access; this.activity=activity; this.swaps=swaps; this.push=push;
     }
 
     // All decisions for one building are serialized by its database row lock.
@@ -73,6 +74,7 @@ public class AllocationService {
             swaps.invalidateEntry(buildingId,entry.getId());
             entry.hold(); // Retains the rank token while hidden from the waiting list.
             MachineHold hold = holds.save(new MachineHold(machine, entry, now, now.plus(HOLD_TIME)));
+            push.enqueue(hold);
             activity.record(buildingId,null,"HOLD_ASSIGNED",hold.getId(),machine.getId(),"WAITING","HELD");
             created.add(view(hold));
         }

@@ -20,6 +20,10 @@ Dự án web ưu tiên giao diện điện thoại; mỗi quản lý chọn số
 - Khi vào hàng, cư dân chọn **Sẵn sàng nhận máy** hoặc **Chưa sẵn sàng**; trạng thái có thể đổi bằng một nút ngay trên trang tòa. Hệ thống chỉ giao cho người đang sẵn sàng theo thứ tự hàng, bỏ qua người chưa sẵn sàng mà không xóa vị trí của họ. Nếu không ai sẵn sàng, máy chờ chứ không đếm hạn cho ai.
 - Khi hệ thống giao máy cho người sẵn sàng, hạn bắt đầu giặt 8 phút chạy ngay từ thời điểm giao, không đợi họ lên xác nhận máy. Nếu họ lên và báo máy chưa dùng được trong hạn, lượt giữ được giải phóng và họ được trả về **cùng hàng đợi theo mốc thứ tự khi được giao**, không có vé ưu tiên nhảy lên đầu về sau. Cửa sổ tự lấy 10 phút diễn ra trước khi giao lượt kiểm tra.
 
+## Thông báo đến lượt trên thiết bị
+
+Web Push hỗ trợ Chrome PC và iPhone/iPad iOS 16.4+ khi thêm web vào Màn hình chính. Bật riêng từng thiết bị trong **Tài khoản → Thông báo đến lượt**. Java gửi sau khi giao lượt kiểm tra máy thành công; không coi thông báo là xác nhận máy trống. Backend cần cấu hình VAPID; Render Free ngủ có thể làm chậm job. Xem [hướng dẫn Web Push](docs/web-push.md) để cấu hình, bật trên iPhone và kiểm thử thiết bị thật.
+
 ## Khởi chạy mã nguồn
 
 Đây là **bài tập lớn Java**: nghiệp vụ hướng đối tượng, phân quyền, khóa giao dịch theo tòa và API nằm trong `backend/` (**Java 21 + Spring Boot 3.5.7 + Maven + H2**). Next.js/React/TypeScript ở `src/` là giao diện web và cầu nối API phía server qua địa chỉ loopback (`JAVA_API_ORIGIN`, mặc định `http://127.0.0.1:8080`).
