@@ -216,6 +216,8 @@ export default function SwapsView({
       ]);
     } catch (err) {
       if (mounted.current && pending.current === controller && (timedOut || !controller.signal.aborted)) {
+        // A failed background read leaves stale data; only a complete load may unlock actions.
+        setBlocked(true);
         setError(err instanceof Error ? err.message : 'Chưa rõ kết quả. Hãy thử tải lại.');
       }
     } finally {
@@ -358,7 +360,19 @@ export default function SwapsView({
         )}
       </section>
 
-      {error && <p className="alert alert-error" role="alert">{error}</p>}
+      {error && (
+        <div className="alert alert-error" role="alert">
+          <p>{error}</p>
+          <button
+            type="button"
+            className="btn btn-outline"
+            disabled={busy}
+            onClick={() => void run()}
+          >
+            Tải lại danh sách đổi lượt
+          </button>
+        </div>
+      )}
       {notice && <p className="alert alert-ok" role="status">{notice}</p>}
 
       <section className="surface-card" aria-label="Danh sách yêu cầu đổi lượt">

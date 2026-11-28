@@ -213,21 +213,91 @@ it('allows a user mutation to cancel a silent poll but does not poll or submit a
   await act(async () => { read.resolve(reply('/swaps/pending?page=0')); });
 });
 
-it('bounds a stalled JSON body, discards its late result, and recovers on the next read', async () => {
+it('bounds a stalled JSON body, blocks stale actions, discards its late result, and recovers on the next read', async () => {
+  incoming = [swap];
   render(<SwapsView {...props()} />);
   await flush();
+  const select = screen.getByRole('combobox') as HTMLSelectElement;
+  fireEvent.change(select, { target: { value: 'entry-b' } });
+  const send = screen.getByRole('button', { name: 'Gửi lời mời' }) as HTMLButtonElement;
+  const accept = screen.getByRole('button', { name: 'Đồng ý đổi' }) as HTMLButtonElement;
+  const reject = screen.getByRole('button', { name: 'Từ chối' }) as HTMLButtonElement;
   const body = deferred<unknown>();
   fetchMock.mockImplementationOnce(async () => ({ ok: true, status: 200, json: () => body.promise }) as Response);
   await advance(12000);
   const signal = fetchMock.mock.calls[3][1]?.signal;
-  await advance(15000);
+  await advance(14999);
+  expect([select.disabled, send.disabled, accept.disabled, reject.disabled]).toEqual([false, false, false, false]);
+  await advance(1);
   expect(signal?.aborted).toBe(true);
   expect(screen.getByRole('alert').textContent).toContain('quá thời gian');
+  expect([select.disabled, send.disabled, accept.disabled, reject.disabled]).toEqual([true, true, true, true]);
+  await act(async () => { body.resolve({ items: [], page: 0, size: 20, hasNext: false }); });
+  expect(screen.getByRole('button', { name: 'Đồng ý đổi' })).toBe(accept);
+  expect(accept.disabled).toBe(true);
   await advance(12000);
   expect(fetchMock).toHaveBeenCalledTimes(9);
   expect(screen.queryByRole('alert')).toBeNull();
+  expect([select.disabled, send.disabled, accept.disabled, reject.disabled]).toEqual([false, false, false, false]);
+  expect(select.value).toBe('entry-b');
+  expect(fetchMock.mock.calls.every(([, init]) => init?.method !== 'POST')).toBe(true);
+});
+
+it('blocks stale actions after a silent 502 until a complete successful poll, preserving the draft', async () => {
+  incoming = [swap];
+  render(<SwapsView {...props()} />);
+  await flush();
+  const select = screen.getByRole('combobox') as HTMLSelectElement;
+  fireEvent.change(select, { target: { value: 'entry-b' } });
+  const send = screen.getByRole('button', { name: 'Gửi lời mời' }) as HTMLButtonElement;
+  const accept = screen.getByRole('button', { name: 'Đồng ý đổi' }) as HTMLButtonElement;
+  const reject = screen.getByRole('button', { name: 'Từ chối' }) as HTMLButtonElement;
+  expect([select.disabled, send.disabled, accept.disabled, reject.disabled]).toEqual([false, false, false, false]);
+  fetchMock.mockImplementationOnce(async () => new Response('{}', { status: 502 }));
+  await advance(12000);
+  expect(screen.getByRole('alert').textContent).toContain('Không tải được');
+  expect([select.disabled, send.disabled, accept.disabled, reject.disabled]).toEqual([true, true, true, true]);
+  await click('button', 'Gửi lời mời');
+  await click('button', 'Đồng ý đổi');
+  await click('button', 'Từ chối');
+  expect(fetchMock).toHaveBeenCalledTimes(6);
+  const body = deferred<unknown>();
+  fetchMock.mockImplementationOnce(async () => ({ ok: true, status: 200, json: () => body.promise }) as Response);
+  await advance(12000);
+  expect([select.disabled, send.disabled, accept.disabled, reject.disabled]).toEqual([true, true, true, true]);
   await act(async () => { body.resolve({ items: [swap], page: 0, size: 20, hasNext: false }); });
-  expect(screen.queryByRole('button', { name: 'Đồng ý đổi' })).toBeNull();
+  expect(screen.queryByRole('alert')).toBeNull();
+  expect([select.disabled, send.disabled, accept.disabled, reject.disabled]).toEqual([false, false, false, false]);
+  expect(select.value).toBe('entry-b');
+  expect(fetchMock.mock.calls.every(([, init]) => init?.method !== 'POST')).toBe(true);
+});
+
+it('offers a read-only explicit reload while stale actions and tabs are blocked', async () => {
+  outgoing = [{ ...swap, senderId: 'a', recipientId: 'b' }];
+  const callbacks = props();
+  render(<SwapsView {...callbacks} />);
+  await flush();
+  await click('tab', 'Đã gửi (1)');
+  const cancel = screen.getByRole('button', { name: 'Hủy lời mời' }) as HTMLButtonElement;
+  expect(cancel.disabled).toBe(false);
+  fetchMock.mockImplementationOnce(async () => new Response('{}', { status: 502 }));
+  await advance(12000);
+  expect(cancel.disabled).toBe(true);
+  expect((screen.getByRole('tab', { name: 'Lịch sử' }) as HTMLButtonElement).disabled).toBe(true);
+  const reload = screen.getByRole('button', { name: 'Tải lại danh sách đổi lượt' }) as HTMLButtonElement;
+  expect(reload.disabled).toBe(false);
+  const body = deferred<unknown>();
+  fetchMock.mockImplementationOnce(async () => ({ ok: true, status: 200, json: () => body.promise }) as Response);
+  await click('button', 'Tải lại danh sách đổi lượt');
+  expect(reload.disabled).toBe(true);
+  await click('button', 'Tải lại danh sách đổi lượt');
+  expect(fetchMock).toHaveBeenCalledTimes(12);
+  await act(async () => { body.resolve({ items: [], page: 0, size: 20, hasNext: false }); });
+  expect(screen.queryByRole('alert')).toBeNull();
+  expect(cancel.disabled).toBe(false);
+  expect(screen.getByRole('tab', { name: 'Đã gửi (1)' }).getAttribute('aria-selected')).toBe('true');
+  expect(fetchMock.mock.calls.every(([, init]) => init?.method !== 'POST')).toBe(true);
+  expect(callbacks.onRefresh).not.toHaveBeenCalled();
 });
 
 it('bounds a stalled mutation and resumes only reads, never retrying the POST', async () => {
