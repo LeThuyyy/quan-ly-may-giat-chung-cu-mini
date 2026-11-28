@@ -58,7 +58,7 @@ Render Free có thể ngủ khi không có truy cập; các job giao máy/gửi 
 
 - Browser đăng ký service worker `/sw.js`, xin quyền **chỉ sau thao tác bấm**, tạo PushSubscription bằng VAPID public key.
 - Next routes `/api/push/config`, `/api/push/subscriptions` và `/api/push/subscriptions/status` dùng opaque session bridge; mutation vẫn kiểm tra same-origin và Spring CSRF.
-- Java sở hữu đăng ký theo tài khoản; endpoint là dữ liệu nhạy cảm, không ghi vào log hoặc trả danh sách của người khác. Chỉ chấp nhận endpoint HTTPS của các nhà cung cấp push được hỗ trợ, không cho gửi tới URL tùy ý.
+- Java sở hữu đăng ký theo tài khoản; endpoint là dữ liệu nhạy cảm, không ghi vào log hoặc trả danh sách của người khác. Chỉ chấp nhận endpoint HTTPS của các nhà cung cấp push được hỗ trợ, không cho gửi tới URL tùy ý. Token FCM của Chrome có thể chứa dấu `:` trong path; ký tự này hợp lệ, không được từ chối nhầm thành400. Vẫn chặn host giả, userinfo, query/fragment, cổng tùy ý và path traversal.
 - Allocation ghi outbox cùng transaction tạo hold; rollback không được để lại thông báo giả. Job gửi mạng ngoài transaction khóa tòa, có retry/giới hạn, kiểm tra lượt và quyền còn hiệu lực; endpoint chết được dọn.
 - Đăng ký có thể sống lâu hơn phiên đăng nhập web để nhận khi đóng trang; không tự coi hết TTL opaque session là đã tắt push. Đăng xuất chủ động và nút tắt gỡ đăng ký thiết bị. Chặn quyền trong hệ điều hành cũng ngăn hiển thị; không thay thế thu hồi server trên thiết bị dùng chung.
 

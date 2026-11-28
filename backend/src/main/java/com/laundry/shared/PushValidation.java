@@ -21,7 +21,8 @@ final class PushValidation {
             boolean allowed = (host.equals("fcm.googleapis.com") && path.startsWith("/fcm/send/"))
                 || (host.equals("updates.push.services.mozilla.com") && path.startsWith("/wpush/v2/"))
                 || (host.matches("[a-z0-9-]+(?:\\.[a-z0-9-]+)*\\.push\\.apple\\.com") && path.startsWith("/"));
-            if (!allowed || path.length() < 2 || path.endsWith("/") || !path.matches("/[A-Za-z0-9_./~-]+")
+            // FCM registration tokens contain ':' inside the path; it is not a URL authority separator here.
+            if (!allowed || path.length() < 2 || path.endsWith("/") || !path.matches("/[A-Za-z0-9_./~:-]+")
                 || path.contains("..") || path.contains("//")) throw new IllegalArgumentException();
             return value;
         } catch (IllegalArgumentException ex) { throw bad(); }
