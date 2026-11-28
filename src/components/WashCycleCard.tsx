@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useScopedActions } from '@/lib/use-scoped-actions';
-import { randomUuid } from '@/lib/random-uuid';
+import { ownerAdjustmentRequest, resolveOwnerAdjustment } from '@/lib/owner-adjustment-requests';
 
 export type HandoverMode = 'ALLOW_TRANSFER' | 'SELF_PICKUP';
 export interface WashCycleView {
@@ -46,7 +46,6 @@ export default function WashCycleCard({ buildingId, cycles, machineLabels, onRef
   const [notice, setNotice] = useState<string | null>(null);
   const [ownerMinutes, setOwnerMinutes] = useState(10);
   const clockOffsetRef = useRef<number>(0);
-  const remainingRequests = useRef(new Map<string, { minutes: number; id: string }>());
 
   useEffect(() => {
     const firstServerNow = cycles?.[0]?.serverNow;
@@ -85,11 +84,9 @@ export default function WashCycleCard({ buildingId, cycles, machineLabels, onRef
   async function updateRemaining(cycle: WashCycleView) {
     if (busy || uncertain || !Number.isInteger(ownerMinutes) || ownerMinutes < 1 || ownerMinutes > 360) return;
     setBusy(true); setError(null);
-    const requestKey = `${buildingId}:${cycle.id}`;
-    const previous = remainingRequests.current.get(requestKey);
+    const requestKey = `${cycle.accountId}:${buildingId}:${cycle.id}`;
     try {
-      const request = previous?.minutes === ownerMinutes ? previous : { minutes: ownerMinutes, id: randomUuid() };
-      remainingRequests.current.set(requestKey, request);
+      const request = ownerAdjustmentRequest(requestKey, ownerMinutes);
       const res = await scopedFetch(`/api/buildings/${buildingId}/wash-cycles/${cycle.id}/remaining`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, cache: 'no-store',
         body: JSON.stringify({ remainingMinutes: ownerMinutes, clientRequestId: request.id }),
@@ -102,7 +99,7 @@ export default function WashCycleCard({ buildingId, cycles, machineLabels, onRef
       setNotice('Đã ghi nhận thời gian còn lại. Kiểm tra mốc dự kiến mới từ máy chủ.');
       try {
         await refresh();
-        remainingRequests.current.delete(requestKey);
+        resolveOwnerAdjustment(requestKey);
       } catch { setUncertain(true); setError('Đã ghi nhận nhưng chưa tải được trạng thái. Không gửi lại.'); }
     } catch { setUncertain(true); setError('Mất kết nối, chưa rõ kết quả. Hãy tải lại trước.'); }
     finally { setBusy(false); }

@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import WashCycleCard, { type WashCycleView } from '../WashCycleCard';
+import { resolveOwnerAdjustment } from '@/lib/owner-adjustment-requests';
 
 const cycle: WashCycleView = {
   id: 'cycle1', machineId: 'machine1', queueEntryId: 'queue1', accountId: 'owner', ownerName: 'Owner',
@@ -9,7 +10,7 @@ const cycle: WashCycleView = {
   estimatedEndAt: '2026-11-28T00:45:00Z', inspectionAt: '2026-11-28T00:45:00Z', serverNow: '2026-11-28T00:10:00Z',
   handoverMode: 'ALLOW_TRANSFER', state: 'ACTIVE', overrunReports: 0, completedAt: null, completion: null, phase: 'RUNNING',
 };
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); resolveOwnerAdjustment('owner:building1:cycle1'); });
 
 describe('owner remaining-time operation identity', () => {
   it('allows an overdue ALLOW_TRANSFER owner to report minutes while server still decides hold eligibility', async () => {
@@ -42,6 +43,20 @@ describe('owner remaining-time operation identity', () => {
     expect(first.clientRequestId).toMatch(/^[0-9a-f-]{36}$/);
     expect(second).toEqual(first);
     expect(first.remainingMinutes).toBe(10);
+  });
+  it('retains unresolved operation identity when failed sync unmounts and later remounts the card', async () => {
+    const fetch = vi.fn().mockRejectedValueOnce(new Error('lost response')).mockResolvedValue(new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetch);
+    const view = render(<WashCycleCard buildingId="building1" cycles={[cycle]} machineLabels={{}} onRefresh={vi.fn().mockRejectedValue(new Error('offline'))} onSessionExpired={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Báo phút còn lại (dời một lần)' }));
+    await screen.findByText('Mất kết nối, chưa rõ kết quả. Hãy tải lại trước.');
+    fireEvent.click(screen.getByRole('button', { name: 'Tải lại trạng thái' }));
+    await screen.findByText('Tải lại thất bại.');
+    view.unmount();
+    render(<WashCycleCard buildingId="building1" cycles={[cycle]} machineLabels={{}} onRefresh={vi.fn().mockResolvedValue(undefined)} onSessionExpired={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Báo phút còn lại (dời một lần)' }));
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+    expect(JSON.parse(fetch.mock.calls[1][1].body).clientRequestId).toBe(JSON.parse(fetch.mock.calls[0][1].body).clientRequestId);
   });
   it('uses a new request ID when the user deliberately changes minutes after refresh', async () => {
     const fetch = vi.fn().mockRejectedValue(new Error('network'));
