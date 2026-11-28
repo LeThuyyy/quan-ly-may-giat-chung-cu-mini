@@ -6,7 +6,10 @@
 
 - Người dùng yêu cầu sửa lỗi ưu tiên quan trọng, mỗi lỗi commit/push riêng. ChromeFCM dấu`:` đã mergePR17 `1141294`, Java113test và CIgreen. Chưa khẳng định Render deploy/thiết bị nhận thật.
 - Đăng ký mật khẩu >72byteUTF-8 (73ASCII hoặc25ký tự`ắ`) đã tái hiện ServletException/500 do BCrypt. Sửa kiểm tra400 trước băm + lỗi inline/hint đăng ký; không cắt password, không thay dữ liệu/hash tài khoản cũ. Test biên24ký tự`ắ`=72byte đăng ký/đăng nhập đạt; LaundryApiTest7/7 và AuthSection5/5 đạt.
-- Audit chưa tìm thấy bypassquyền/cấp trùng máy trong các đường core đã đọc. Các lỗi đang sửa riêng: parent mutation đổi tòa trả chậm, modal mất focus khi gõ, swap không live-refresh, báo lỗi kỹ thuật khi có mẻ cũ, retryownerRemaining gây falseincident. Không coi audit này là chứng nhận hết mọi lỗi.
+- Các sửa đã commit/push riêng trong PR18:9e14736passwordUTF8,05d7ce2modal focus,afd8858báo lỗi kỹ thuật khi có mẻ cũ,60becc9scope parent mutation,90c3bferetryownerRemaining UUID,d0440f6ownerRemaining quá giờ,982fd8eswap live-refresh. UUIDownerRemaining bảo vệ lần báo gần nhất; clientlegacy khôngUUID không có guarantee, không auto-retry.
+- Kiểm chứng tích hợp: frontend326/326+docs/lint/typecheck,webpackbuildexit0; Java123/123(0failure/error/skipped,JDK25compile21),CIJava21/frontendgreen. Maven lần đầu nhận staleclasses sau copyfile gây compilefail, đã buộc recompile nguồn và chạy toàn suite đạt, không clean/killserver.
+- Chrome production390/1440 APIauth/operationalmocked: passwordUTF8error và gõmodal nhiều ký tự giữ focus đạt, không overflow/pageerror/consoleerror ở màn hình authenticated; initial401anonymous là dự kiến. Ảnh `%TEMP%/audit-modal-390.png`, script `%TEMP%/existing-fixes-browser-smoke.cjs`; không gọi mutationproduction. Review cuối đang chạy, chưa mergePR18.
+- Audit chưa tìm thấy bypassquyền/cấp trùng máy trong các đường core đã đọc; không coi đây là chứng nhận hết mọi lỗi. PushthậtAppleFCM/iPhone,PostgreSQLmigrationvà stressdataset chưa nghiệm thu đầy đủ. Không resetDB/đổi planRender.
 
 ## SỬA ĐĂNG KÝ CHROME WEB PUSH — 2026-11-28
 
