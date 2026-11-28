@@ -106,7 +106,10 @@ class PushSupportTest {
         for (String value : List.of("http://fcm.googleapis.com/fcm/send/x", "https://fcm.googleapis.com.evil.test/fcm/send/x",
             "https://user@fcm.googleapis.com/fcm/send/x", "https://fcm.googleapis.com:443/fcm/send/x", "https://127.0.0.1/x",
             "https://fcm.googleapis.com/fcm/send/x#fragment", "https://fcm.googleapis.com/fcm/send/x?q=x",
-            "https://push.apple.com.evil.test/x", "https://fcm.googleapis.com/fcm/send/%2e%2e/x"))
+            "https://push.apple.com.evil.test/x", "https://fcm.googleapis.com/fcm/send/%2e%2e/x",
+            "https://fcm.googleapis.com.evil.test/fcm/send/device:token",
+            "https://fcm.googleapis.com/fcm/send/device:token?redirect=https://127.0.0.1",
+            "https://fcm.googleapis.com/fcm/send/../device:token"))
             assertThrows(Exception.class, () -> PushValidation.endpoint(value), value);
         for (String value : List.of(endpoint(), "https://updates.push.services.mozilla.com/wpush/v2/token", "https://web.push.apple.com/token"))
             assertDoesNotThrow(() -> PushValidation.endpoint(value));
@@ -124,6 +127,19 @@ class PushSupportTest {
         mvc.perform(post("/api/push/subscriptions/status").with(user(a.getUsername())).contentType("application/json").content("{\"endpoint\":\"https://fcm.googleapis.com/fcm/send/token\"}")).andExpect(status().isForbidden());
         mvc.perform(delete("/api/push/subscriptions").with(user(a.getUsername())).contentType("application/json").content("{}")).andExpect(status().isForbidden());
         mvc.perform(post("/api/push/subscriptions").with(user(a.getUsername())).with(csrf()).contentType("application/json").content("{\"endpoint\":\"https://localhost/x\",\"keys\":{\"p256dh\":\"bad\",\"auth\":\"bad\"}}")).andExpect(status().isBadRequest());
+    }
+    @Test void chromeFcmTokenWithColonCanRegisterCheckStatusAndDelete() throws Exception {
+        Account owner = account();
+        String endpoint = "https://fcm.googleapis.com/fcm/send/chrome-device:APA91bSynthetic_token-123";
+        String registration = "{\"endpoint\":\"" + endpoint + "\",\"keys\":{\"p256dh\":\"" + key + "\",\"auth\":\"" + auth + "\"}}";
+        String reference = "{\"endpoint\":\"" + endpoint + "\"}";
+        mvc.perform(post("/api/push/subscriptions").with(user(owner.getUsername())).with(csrf())
+            .contentType("application/json").content(registration)).andExpect(status().isOk());
+        mvc.perform(post("/api/push/subscriptions/status").with(user(owner.getUsername())).with(csrf())
+            .contentType("application/json").content(reference)).andExpect(status().isOk()).andExpect(jsonPath("$.subscribed").value(true));
+        mvc.perform(delete("/api/push/subscriptions").with(user(owner.getUsername())).with(csrf())
+            .contentType("application/json").content(reference)).andExpect(status().isOk());
+        assertFalse(subscriptions.status(owner.getUsername(), endpoint));
     }
     @Test void assignmentCommitsBeforeSendAndSuccessfulDeliveryDeduplicates() throws Exception {
         var assigned = assign();

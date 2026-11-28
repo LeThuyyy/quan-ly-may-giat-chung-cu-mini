@@ -2,6 +2,11 @@
 
 > Bắt đầu bằng file này và `git status --short --branch`. Chỉ mở các file liên quan tác vụ; không coi nội dung này là quyền phê duyệt merge/push.
 
+## SỬA ĐĂNG KÝ CHROME WEB PUSH — 2026-11-28
+
+- Người dùng báo Chrome hiện400 “Dữ liệu gửi lên không hợp lệ” khi bấm bật. Tái hiện bằng MockMvc token FCM tổng hợp có dấu`:`: expected200, actual400. Nguyên nhân xác minh được: regex path quá chặt, chặn dấu`:` hợp lệ trong FCM token (chưa thu thập endpoint thật của người dùng).
+- Branch `fix/chrome-push-endpoint`: cho phép`:` trong path của provider đã allowlist; không nới host/protocol/cổng/userinfo/query/fragment/traversal. Regression kiểm tra đăng ký→status→delete qua CSRF và URL giả vẫn bị chặn. Toàn bộ Java113/113đạt, 0failure/error/skipped (JDK25 compile21), test tái hiện lỗi trước sửa400 và đạt sau sửa. Người dùng yêu cầu sửa lỗi theo ưu tiên, mỗi lỗi commit/push riêng; đang chuẩn bị PR/CI cho sửa Chrome. Chưa xác minh deploy/đăng ký thiết bị thật.
+
 ## NHẮC LẤY ĐỒ — 2026-11-28
 
 - Người dùng yêu cầu thêm nhắc lấy đồ; làm trên `feature/wash-pickup-reminder` từ develop `43cb636` (PR15 WebPush đã merge). Không đổi VAPID/quyền đăng ký hoặc quy tắc giặt/bàn giao.
