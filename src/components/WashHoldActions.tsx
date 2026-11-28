@@ -111,17 +111,20 @@ export default function WashHoldActions({ buildingId, hold, handover, serverNow,
         {!hold.physicallyChecked && <p role="status">Bạn chưa xác nhận kiểm tra tại máy.</p>}
         <div className="queue-actions">
           <button type="submit" className="btn btn-primary" disabled={!canStart}>Bắt đầu giặt</button>
-          <button
-            type="button"
-            className="btn btn-danger"
-            disabled={busy || uncertain || expired}
-            onClick={() => void mutate(`holds/${hold.id}/unusable`, undefined, 'Đã ghi nhận báo máy chưa dùng được; lượt giữ được khôi phục về hàng.')}
-          >
-            Báo máy chưa dùng được
-          </button>
         </div>
       </form>
     </>}
+    {handover !== undefined && <div className="queue-actions">
+      <button
+        type="button"
+        className="btn btn-danger"
+        disabled={busy || uncertain || expired}
+        onClick={() => void mutate(`holds/${hold.id}/unusable`, undefined, 'Đã ghi nhận báo máy chưa dùng được; lượt giữ được khôi phục về hàng.')}
+      >
+        Báo máy chưa dùng được
+      </button>
+      <p className="muted-note">Chỉ báo khi máy có lỗi kỹ thuật thực sự. Nếu máy chỉ còn chạy, dùng “Báo máy vẫn chạy” khi có mẻ trước.</p>
+    </div>}
     {notice && <p role="status">{notice}</p>}
     {error && <p role="alert" className="alert alert-error">{error}</p>}
     {uncertain && <button type="button" className="btn btn-outline" disabled={busy}
