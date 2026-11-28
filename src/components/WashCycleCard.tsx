@@ -37,7 +37,7 @@ export default function WashCycleCard({ buildingId, cycles, machineLabels, onRef
   onRefresh: () => Promise<void>;
   onSessionExpired: () => void;
 }) {
-  const { scopedFetch, refresh, sessionExpired } = useScopedActions(onRefresh, onSessionExpired);
+  const { scopedJson, refresh, sessionExpired } = useScopedActions(onRefresh, onSessionExpired);
   const [now, setNow] = useState<number | null>(null);
   const [checkedId, setCheckedId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -65,14 +65,13 @@ export default function WashCycleCard({ buildingId, cycles, machineLabels, onRef
     if (busy || uncertain || checkedId !== cycle.id) return;
     setBusy(true); setError(null);
     try {
-      const res = await scopedFetch(`/api/buildings/${buildingId}/wash-cycles/${cycle.id}/pickup`, {
+      const res = await scopedJson(`/api/buildings/${buildingId}/wash-cycles/${cycle.id}/pickup`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ physicallyConfirmed: true }), cache: 'no-store',
       });
       if (res.status === 401) { sessionExpired(); return; }
       if (!res.ok) {
-        const body = await res.json().catch(() => null) as { error?: string } | null;
-        setError(body?.error ?? 'Không xác nhận được lấy đồ.'); setUncertain(true); return;
+        setError(res.error ?? 'Không xác nhận được lấy đồ.'); setUncertain(true); return;
       }
       setNotice('Đã hoàn tất mẻ cũ và giải phóng yêu cầu giặt.');
       setCheckedId(null);
@@ -87,14 +86,13 @@ export default function WashCycleCard({ buildingId, cycles, machineLabels, onRef
     const requestKey = `${cycle.accountId}:${buildingId}:${cycle.id}`;
     try {
       const request = ownerAdjustmentRequest(requestKey, ownerMinutes);
-      const res = await scopedFetch(`/api/buildings/${buildingId}/wash-cycles/${cycle.id}/remaining`, {
+      const res = await scopedJson(`/api/buildings/${buildingId}/wash-cycles/${cycle.id}/remaining`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, cache: 'no-store',
         body: JSON.stringify({ remainingMinutes: ownerMinutes, clientRequestId: request.id }),
       });
       if (res.status === 401) { sessionExpired(); return; }
       if (!res.ok) {
-        const responseBody = await res.json().catch(() => null) as { error?: string } | null;
-        setError(responseBody?.error ?? 'Không thay đổi được giờ dự kiến.'); setUncertain(true); return;
+        setError(res.error ?? 'Không thay đổi được giờ dự kiến.'); setUncertain(true); return;
       }
       setNotice('Đã ghi nhận thời gian còn lại. Kiểm tra mốc dự kiến mới từ máy chủ.');
       try {

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import WashCycleCard, { type WashCycleView } from '../WashCycleCard';
 import { resolveOwnerAdjustment } from '@/lib/owner-adjustment-requests';
@@ -10,7 +10,7 @@ const cycle: WashCycleView = {
   estimatedEndAt: '2026-11-28T00:45:00Z', inspectionAt: '2026-11-28T00:45:00Z', serverNow: '2026-11-28T00:10:00Z',
   handoverMode: 'ALLOW_TRANSFER', state: 'ACTIVE', overrunReports: 0, completedAt: null, completion: null, phase: 'RUNNING',
 };
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); resolveOwnerAdjustment('owner:building1:cycle1'); });
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.useRealTimers(); resolveOwnerAdjustment('owner:building1:cycle1'); });
 
 describe('owner remaining-time operation identity', () => {
   it('allows an overdue ALLOW_TRANSFER owner to report minutes while server still decides hold eligibility', async () => {
@@ -33,7 +33,7 @@ describe('owner remaining-time operation identity', () => {
     const onRefresh = vi.fn().mockResolvedValue(undefined);
     render(<WashCycleCard buildingId="building1" cycles={[cycle]} machineLabels={{}} onRefresh={onRefresh} onSessionExpired={vi.fn()} />);
     fireEvent.click(screen.getByRole('button', { name: 'Báo phút còn lại (dời một lần)' }));
-    await screen.findByText('Mất kết nối, chưa rõ kết quả. Hãy tải lại trước.');
+    await screen.findByText('Không thể kết nối tới máy chủ. Vui lòng kiểm tra mạng và thử lại.');
     fireEvent.click(screen.getByRole('button', { name: 'Tải lại trạng thái' }));
     await waitFor(() => expect((screen.getByRole('button', { name: 'Báo phút còn lại (dời một lần)' }) as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(screen.getByRole('button', { name: 'Báo phút còn lại (dời một lần)' }));
@@ -49,7 +49,7 @@ describe('owner remaining-time operation identity', () => {
     vi.stubGlobal('fetch', fetch);
     const view = render(<WashCycleCard buildingId="building1" cycles={[cycle]} machineLabels={{}} onRefresh={vi.fn().mockRejectedValue(new Error('offline'))} onSessionExpired={vi.fn()} />);
     fireEvent.click(screen.getByRole('button', { name: 'Báo phút còn lại (dời một lần)' }));
-    await screen.findByText('Mất kết nối, chưa rõ kết quả. Hãy tải lại trước.');
+    await screen.findByText('Không thể kết nối tới máy chủ. Vui lòng kiểm tra mạng và thử lại.');
     fireEvent.click(screen.getByRole('button', { name: 'Tải lại trạng thái' }));
     await screen.findByText('Tải lại thất bại.');
     view.unmount();
@@ -58,12 +58,26 @@ describe('owner remaining-time operation identity', () => {
     await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
     expect(JSON.parse(fetch.mock.calls[1][1].body).clientRequestId).toBe(JSON.parse(fetch.mock.calls[0][1].body).clientRequestId);
   });
+  it.each(['headers', 'body'])('bounds a stalled remaining-time request at %s and offers recovery', async stage => {
+    vi.useFakeTimers();
+    const fetch = vi.fn((_: unknown, init?: RequestInit) => {
+      const hang = () => new Promise<never>((_, reject) => init!.signal!.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError'))));
+      return stage === 'headers' ? hang() : Promise.resolve({ status: 200, ok: true, text: hang });
+    });
+    vi.stubGlobal('fetch', fetch);
+    render(<WashCycleCard buildingId="building1" cycles={[cycle]} machineLabels={{}} onRefresh={vi.fn().mockResolvedValue(undefined)} onSessionExpired={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Báo phút còn lại (dời một lần)' }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(15000); });
+    expect(screen.getByRole('alert').textContent).toContain('Yêu cầu quá thời gian');
+    expect((screen.getByRole('button', { name: 'Tải lại trạng thái' }) as HTMLButtonElement).disabled).toBe(false);
+    expect(fetch).toHaveBeenCalledOnce();
+  });
   it('uses a new request ID when the user deliberately changes minutes after refresh', async () => {
     const fetch = vi.fn().mockRejectedValue(new Error('network'));
     vi.stubGlobal('fetch', fetch);
     render(<WashCycleCard buildingId="building1" cycles={[cycle]} machineLabels={{}} onRefresh={vi.fn().mockResolvedValue(undefined)} onSessionExpired={vi.fn()} />);
     fireEvent.click(screen.getByRole('button', { name: 'Báo phút còn lại (dời một lần)' }));
-    await screen.findByText('Mất kết nối, chưa rõ kết quả. Hãy tải lại trước.');
+    await screen.findByText('Không thể kết nối tới máy chủ. Vui lòng kiểm tra mạng và thử lại.');
     fireEvent.click(screen.getByRole('button', { name: 'Tải lại trạng thái' }));
     await waitFor(() => expect((screen.getByRole('spinbutton') as HTMLInputElement).disabled).toBe(false));
     fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '12' } });
