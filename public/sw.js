@@ -8,7 +8,9 @@ self.addEventListener('push', event => {
     try { payload = event.data ? event.data.json() : {}; } catch { /* Generic visible fallback. */ }
     if (!payload || typeof payload !== 'object' || Array.isArray(payload)) payload = {};
     const url = safeDestination(payload.url);
-    await self.registration.showNotification('Đến lượt giặt của bạn', {
+    const title = payload.title === 'Đã đến giờ giặt xong dự kiến'
+      ? payload.title : 'Đến lượt giặt của bạn';
+    await self.registration.showNotification(title, {
       body: typeof payload.body === 'string' ? payload.body.slice(0, 300)
         : 'Bạn có lượt kiểm tra máy. Mở ứng dụng để xem hạn và trạng thái mới nhất.',
       icon: '/icons/icon-192.png',

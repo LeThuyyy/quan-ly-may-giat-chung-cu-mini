@@ -15,7 +15,7 @@ Baseline: develop `7821931`. Nhánh `feature/business-expansion` được chuẩ
 ## Web Push — thông báo giao lượt trên thiết bị
 
 - Gửi khi Java commit hold mới, không gửi trong transaction khóa tòa; outbox và subscription được lưu DB. Rollback allocation không tạo thông báo; sender kiểm tra hold/quyền còn hiệu lực và revision thiết bị trước mỗi lần gửi, giới hạn retry/TTL, gỡ404/410. Push scheduler riêng không chặn job deadline.
-- Chrome PC và iPhone iOS16.4+ đã thêm Home Screen: bật/tắt theo thiết bị trong Tài khoản; không tự xin quyền hoặc đăng ký tài khoản mới chỉ vì browser đã cho phép. Thông báo là mời **kiểm tra máy**, không chứng minh trống và không gia hạn8phút. Chưa gửi nhắc sắp hết hạn qua push.
+- Chrome PC và iPhone iOS16.4+ đã thêm Home Screen: bật/tắt theo thiết bị trong Tài khoản; không tự xin quyền hoặc đăng ký tài khoản mới chỉ vì browser đã cho phép. Thông báo là mời **kiểm tra máy**, không chứng minh trống và không gia hạn8phút. Có nhắc lấy đồ tại `estimatedEndAt` (kể cả SELF_PICKUP), chỉ nhắc nếu máy đã dừng mới lấy; hủy/bỏ qua mẻ đã hoàn tất/cần quản lý, không đổi trạng thái vật lý. Không phát lại mốc đã trễ hơn30phút; mỗi mẻ/thiết bị một nhắc với retry bounded. Chưa gửi nhắc sắp hết hạn giữ qua push.
 - Cần3biếnVAPID, HTTPS và backend hoạt động; Render Free ngủ có thể trễ. Chưa nghiệm thu nhận qua Apple/FCM/iPhone thật. Hướng dẫn và giới hạn: [Web Push](web-push.md).
 
 ## Nền tảng được sửa

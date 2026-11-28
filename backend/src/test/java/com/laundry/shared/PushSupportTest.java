@@ -31,6 +31,13 @@ class PushSupportTest {
     @Autowired PushSubscriptionRepository devices;
     @Autowired PushOutboxRepository rows;
     @Autowired PushOutboxService outbox;
+    @Autowired PickupReminderService reminders;
+    @Autowired PickupReminderRepository reminderRows;
+    @Autowired WashCycleRepository cycles;
+    @Autowired WashService wash;
+    @Autowired BuildingRepository buildings;
+    @MockitoBean PickupReminderJob scheduledPickup;
+    @MockitoBean WashDueJob scheduledWash;
     @Autowired AccountRepository accounts;
     @Autowired LaundryService laundry;
     @Autowired AllocationService allocation;
@@ -54,7 +61,7 @@ class PushSupportTest {
         public Instant instant() { return now; }
     }
     @BeforeEach void setup() throws Exception {
-        rows.deleteAll(); devices.deleteAll();
+        reminderRows.deleteAll(); rows.deleteAll(); devices.deleteAll();
         clock.now = Instant.parse("2026-11-28T00:00:00Z");
         when(settings.enabled()).thenReturn(true);
         var generator = KeyPairGenerator.getInstance("EC"); generator.initialize(new ECGenParameterSpec("secp256r1"));
@@ -183,6 +190,114 @@ class PushSupportTest {
         sender().sendDue(); clock.now = clock.now.plusSeconds(81); sender().sendDue();
         assertTrue(rows.findById(id).orElseThrow().isDone());
         assertEquals(4, rows.findById(id).orElseThrow().getAttempts());
+    }
+    private WashCycle start(Assigned a, WashCycle.HandoverMode mode) {
+        allocation.confirmPhysicalCheck(a.resident().getUsername(), a.buildingId(), a.holdId());
+        return allocation.start(a.resident().getUsername(), a.buildingId(), a.holdId(), 1, mode);
+    }
+    private PickupReminderJob pickupSender() { return new PickupReminderJob(reminders, transport, settings); }
+    private void mutateCycle(Assigned a, UUID id, java.util.function.Consumer<WashCycle> action) {
+        transactions.executeWithoutResult(tx -> {
+            buildings.findLockedById(a.buildingId()).orElseThrow();
+            action.accept(cycles.findById(id).orElseThrow());
+        });
+    }
+    @Test void pickupAtExactEstimatedEndIncludingSelfPickupAndMultipleDevices() throws Exception {
+        var a = assign();
+        String second = endpoint(), disabled = endpoint();
+        subscriptions.register(a.resident().getUsername(), second, key, auth);
+        subscriptions.register(a.resident().getUsername(), disabled, key, auth);
+        var cycle = start(a, WashCycle.HandoverMode.SELF_PICKUP);
+        subscriptions.delete(a.resident().getUsername(), disabled);
+        when(transport.send(any())).thenAnswer(invocation -> {
+            assertFalse(org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive());
+            var delivery = (PushOutboxService.Delivery) invocation.getArgument(0);
+            assertTrue(delivery.pickupReminder()); assertEquals(cycle.getId(), delivery.holdId());
+            assertEquals(cycle.getEstimatedEndAt().plusSeconds(1800), delivery.expiresAt()); return 201;
+        });
+        clock.now = cycle.getEstimatedEndAt().minusNanos(1); pickupSender().sendDue(); verifyNoInteractions(transport);
+        clock.now = cycle.getEstimatedEndAt(); pickupSender().sendDue(); pickupSender().sendDue();
+        verify(transport, times(2)).send(any());
+        assertEquals(2, reminderRows.count());
+        transactions.executeWithoutResult(tx -> {
+            var current = cycles.findById(cycle.getId()).orElseThrow();
+            assertEquals(WashCycle.State.ACTIVE, current.getState()); assertTrue(current.isOpen());
+        });
+    }
+    @Test void pickupRechecksEstimateAndNeverRepeatsAfterAcceptedDelivery() throws Exception {
+        var a = assign(); var cycle = start(a, WashCycle.HandoverMode.ALLOW_TRANSFER);
+        clock.now = cycle.getEstimatedEndAt();
+        reminders.candidates().forEach(reminders::enqueue);
+        var id = reminders.due().getFirst();
+        mutateCycle(a, cycle.getId(), c -> c.reportRunning(clock.now, 5));
+        assertNull(reminders.claim(id));
+        clock.now = clock.now.plusSeconds(299); pickupSender().sendDue(); verifyNoInteractions(transport);
+        clock.now = clock.now.plusSeconds(1); when(transport.send(any())).thenReturn(201);
+        pickupSender().sendDue();
+        mutateCycle(a, cycle.getId(), c -> { c.markNeedsManager(); c.managerDefer(clock.now, 1); });
+        clock.now = clock.now.plusSeconds(60); pickupSender().sendDue();
+        verify(transport, times(1)).send(any());
+    }
+    @Test void pickupSkipsCompletedTransferredNeedsManagerAndOldCycles() {
+        for (var completion : WashCycle.Completion.values()) {
+            var a = assign(); var cycle = start(a, WashCycle.HandoverMode.SELF_PICKUP);
+            clock.now = cycle.getEstimatedEndAt(); reminders.candidates().forEach(reminders::enqueue);
+            var ids = reminders.due();
+            mutateCycle(a, cycle.getId(), c -> c.complete(clock.now, completion));
+            ids.forEach(id -> assertNull(reminders.claim(id)));
+        }
+        var a = assign(); var cycle = start(a, WashCycle.HandoverMode.SELF_PICKUP);
+        clock.now = cycle.getEstimatedEndAt(); reminders.candidates().forEach(reminders::enqueue);
+        var id = reminders.due().getFirst(); mutateCycle(a, cycle.getId(), WashCycle::markNeedsManager);
+        assertNull(reminders.claim(id));
+        var old = start(assign(), WashCycle.HandoverMode.SELF_PICKUP);
+        clock.now = old.getEstimatedEndAt().plusSeconds(1800); assertTrue(reminders.candidates().isEmpty());
+        pickupSender().sendDue(); verifyNoInteractions(transport);
+    }
+    @Test void pickupRollbackRetryLimitAndSubscriptionRevisionChecks() throws Exception {
+        long before = cycles.count();
+        transactions.executeWithoutResult(tx -> { start(assign(), WashCycle.HandoverMode.SELF_PICKUP); tx.setRollbackOnly(); });
+        assertEquals(before, cycles.count()); pickupSender().sendDue(); verifyNoInteractions(transport);
+        var a = assign(); var cycle = start(a, WashCycle.HandoverMode.SELF_PICKUP);
+        clock.now = cycle.getEstimatedEndAt(); when(transport.send(any())).thenReturn(503);
+        for (int i = 0; i < 5; i++) { pickupSender().sendDue(); clock.now = clock.now.plusSeconds(81); }
+        verify(transport, times(4)).send(any()); assertTrue(reminderRows.findAll().getFirst().isDone());
+        var b = assign(); var other = start(b, WashCycle.HandoverMode.SELF_PICKUP);
+        clock.now = other.getEstimatedEndAt(); reminders.candidates().forEach(reminders::enqueue);
+        subscriptions.register(b.resident().getUsername(), b.endpoint(), key, auth);
+        assertNull(reminders.claim(reminders.due().getFirst()));
+    }
+    @Test void pickupExpiredUnsentCanFollowNewEstimateButDisabledAndRemovedCannotSend() {
+        var a = assign(); var cycle = start(a, WashCycle.HandoverMode.SELF_PICKUP);
+        clock.now = cycle.getEstimatedEndAt(); reminders.candidates().forEach(reminders::enqueue);
+        var id = reminders.due().getFirst();
+        clock.now = clock.now.plusSeconds(1800); assertNull(reminders.claim(id));
+        mutateCycle(a, cycle.getId(), c -> c.reportRunning(clock.now, 1));
+        clock.now = clock.now.plusSeconds(60); assertTrue(reminders.due().contains(id));
+        var delivery = reminders.claim(id); assertNotNull(delivery); reminders.complete(delivery, 201);
+        var b = assign(); var second = start(b, WashCycle.HandoverMode.SELF_PICKUP);
+        clock.now = second.getEstimatedEndAt(); reminders.candidates().forEach(reminders::enqueue);
+        subscriptions.delete(b.resident().getUsername(), b.endpoint());
+        assertNull(reminders.claim(reminders.due().getFirst()));
+        var c = assign(); var third = start(c, WashCycle.HandoverMode.SELF_PICKUP);
+        clock.now = third.getEstimatedEndAt(); reminders.candidates().forEach(reminders::enqueue);
+        transactions.executeWithoutResult(tx -> memberships.delete(memberships.findByBuilding_IdAndAccount_Id(c.buildingId(), c.resident().getId()).orElseThrow()));
+        assertNull(reminders.claim(reminders.due().getFirst()));
+    }
+    @Test void pickupAndAssignmentPayloadsHaveDistinctTitlesAndTags() throws Exception {
+        var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        var web = new WebPushTransport(settings, mapper, clock);
+        UUID cycle = UUID.randomUUID(), building = UUID.randomUUID();
+        var delivery = new PushOutboxService.Delivery(UUID.randomUUID(), 1, endpoint(), key, auth,
+            building, cycle, clock.now.plusSeconds(1800), true);
+        var pickup = mapper.readTree(web.payload(delivery));
+        assertEquals("Đã đến giờ giặt xong dự kiến", pickup.get("title").asText());
+        assertEquals("pickup:" + cycle, pickup.get("tag").asText());
+        assertTrue(pickup.get("body").asText().contains("chỉ lấy đồ khi máy đã dừng"));
+        var assignment = mapper.readTree(web.payload(new PushOutboxService.Delivery(delivery.id(), 1,
+            delivery.endpoint(), key, auth, building, cycle, delivery.expiresAt())));
+        assertEquals("Đến lượt kiểm tra máy giặt", assignment.get("title").asText());
+        assertEquals("hold:" + cycle, assignment.get("tag").asText());
     }
     @Test void unconfiguredIsCleanlyDisabled() {
         var disabled = new PushSettings("", "", ""); assertFalse(disabled.enabled()); assertNull(disabled.publicKey());

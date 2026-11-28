@@ -2,6 +2,12 @@
 
 > Bắt đầu bằng file này và `git status --short --branch`. Chỉ mở các file liên quan tác vụ; không coi nội dung này là quyền phê duyệt merge/push.
 
+## NHẮC LẤY ĐỒ — 2026-11-28
+
+- Người dùng yêu cầu thêm nhắc lấy đồ; làm trên `feature/wash-pickup-reminder` từ develop `43cb636` (PR15 WebPush đã merge). Không đổi VAPID/quyền đăng ký hoặc quy tắc giặt/bàn giao.
+- Nhắc tại giờ xong **dự kiến** (không phải xác nhận máy dừng); SELF_PICKUP nhắc ngay `estimatedEndAt`, không chờ10phút. Mẻ đã hoàn tất/cần quản lý không nhắc. Một mẻ/thiết bị một nhắc; chỉ thử gửi trong30phút từ mốc hiện tại, không phát lịch sử cũ sau downtime. Dời mốc trước gửi phải chờ mốc mới.
+- Đã tích hợp backend:4class PickupReminder, Delivery flag tương thích cũ, payload/tag riêng, indexdue. Java tích hợp chính `mvn ... test`112/112đạt, 0failure/error/skipped (JDK25 compile21, không clean vì JAR server đang chạy). Frontend293/293 + docs/lint/typecheck/build đạt; browser production390/1440 mockAPI không overflow/console/pageerror. Người dùng đã yêu cầu đưa phần nhắc lấy đồ vào develop và xuất thư mục mã nguồn nộp bài; đang chuẩn bị PR/CI, chưa xác minh deploy Render. Render WebPush bản trước còn cần người dùng deploy đúng commit và cấu hình VAPID; chưa nghiệm thu push trên iPhone thật.
+
 ## WEB PUSH — 2026-11-28
 
 - Nhánh `feature/web-push-notifications` từ develop `11dc64c`; giữ thay đổi `CLAUDE.md` của lượt `/init` trước đó ngoài commit tính năng. Người dùng đã yêu cầu đưa lên Render; đang chuẩn bị PR/CI vào develop. Chưa cấu hình khóa trên Render, phiên hiện tại không có Render API/CLI credentials.

@@ -97,4 +97,4 @@ Trên bản sao nền `develop` commit `1fc596d`, sau sửa: Java `clean test` *
 
 Đây không phải xác minh mọi tình huống: chưa ghép sửa refresh/quyền của Châm ở PR #9; chưa quay luồng tự lấy đủ 10 phút, mất mạng hoặc đổi tài khoản khi mutation đang gửi. Cần giữ các giới hạn này khi tích hợp.
 
-**Ghi chú:** Các việc triển khai ngoài mạng Internet, thông báo push/SMS, cảm biến nhận biết máy đã dừng và đổi lượt vẫn nằm ngoài phạm vi phần B.
+**Ghi chú lịch sử phần B:** Triển khai ngoài mạng, push/SMS, cảm biến nhận biết máy dừng và đổi lượt không thuộc đợt phần B ban đầu. Bản mở rộng hiện có Web Push giao lượt và nhắc lấy đồ tại giờ dự kiến; xem [Web Push](web-push.md). Nhắc lấy đồ không thay thế kiểm tra máy đã dừng, không tự hoàn tất mẻ; SELF_PICKUP được nhắc tại `estimatedEndAt`, trước mốc kiểm tra của người sau10phút. SMS/cảm biến vẫn chưa triển khai.

@@ -57,6 +57,7 @@ describe('device push settings', () => {
     api.mockResolvedValue({ ok: true, status: 200, data: { enabled: false, publicKey: null } });
     render(<PushNotificationSettings />);
     expect(await screen.findByText(/Máy chủ chưa bật dịch vụ Web Push/)).toBeTruthy();
+    expect(screen.getByText(/Nhắc lấy đồ không xác nhận máy đã dừng/)).toBeTruthy();
     expect(register).not.toHaveBeenCalled();
   });
   it('handles blocked permission without subscribing', async () => {
