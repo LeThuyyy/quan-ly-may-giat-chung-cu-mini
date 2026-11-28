@@ -123,7 +123,7 @@ export default function WashCycleCard({ buildingId, cycles, machineLabels, onRef
         <p role="timer">Còn dự kiến: <strong>{remaining === null ? '--:--' : `${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, '0')}`}</strong></p>
         <p className="muted-note">Đồng hồ về 0 KHÔNG có nghĩa máy đã dừng. Người dùng phải kiểm tra thực tế.</p>
         {c.state === 'ACTIVE' && <>
-          {c.phase === 'RUNNING' && <div className="field">
+          {(c.phase === 'RUNNING' || (c.phase === 'INSPECTION_ELIGIBLE' && c.handoverMode === 'ALLOW_TRANSFER')) && <div className="field">
             <label>Phút còn lại thực tế trên bảng máy (nếu thay đổi):
               <input type="number" value={ownerMinutes} min={1} max={360}
                 onChange={e => setOwnerMinutes(Number(e.target.value))} disabled={busy || uncertain} />

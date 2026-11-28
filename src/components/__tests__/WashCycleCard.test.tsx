@@ -12,6 +12,20 @@ const cycle: WashCycleView = {
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 describe('owner remaining-time operation identity', () => {
+  it('allows an overdue ALLOW_TRANSFER owner to report minutes while server still decides hold eligibility', async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetch);
+    render(<WashCycleCard buildingId="building1" cycles={[{ ...cycle, phase: 'INSPECTION_ELIGIBLE' }]}
+      machineLabels={{}} onRefresh={vi.fn().mockResolvedValue(undefined)} onSessionExpired={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Báo phút còn lại (dời một lần)' }));
+    await waitFor(() => expect(fetch).toHaveBeenCalledOnce());
+    expect(fetch.mock.calls[0][0]).toContain('/remaining');
+  });
+  it('does not expose owner defer after SELF_PICKUP window starts', () => {
+    render(<WashCycleCard buildingId="building1" cycles={[{ ...cycle, handoverMode: 'SELF_PICKUP', phase: 'SELF_PICKUP' }]}
+      machineLabels={{}} onRefresh={vi.fn()} onSessionExpired={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: 'Báo phút còn lại (dời một lần)' })).toBeNull();
+  });
   it('keeps the same request ID on a retry after uncertain delivery and refresh', async () => {
     const fetch = vi.fn().mockRejectedValueOnce(new Error('response lost')).mockResolvedValue(new Response('{}', { status: 200 }));
     vi.stubGlobal('fetch', fetch);
