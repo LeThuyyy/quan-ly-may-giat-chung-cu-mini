@@ -25,7 +25,7 @@ Tất cả API mutation Java dùng HttpSession/CSRF, Next.js route dùng session
 
 ### Gửi lại báo phút còn lại
 
-Client mới gửi `clientRequestId` UUID ổn định cho một thao tác ownerRemaining. Trong cùng mẻ, gửi lại khóa của **lần báo gần nhất** với cùng số phút trả trạng thái hiện tại, không tăng overrunReports, không dời mốc lần nữa và không ghi audit giả; cùng khóa khác payload trả409. Quyền thành viên/chủ mẻ vẫn kiểm tra trước replay. IDmới là báo mới và vẫn áp dụng escalation lần hai. Client cũ không gửi ID vẫn được chấp nhận, nhưng không có bảo đảm chống lặp. Không auto-retry; nếu kết quả chưa rõ phải refresh trước, UI giữ ID nếu thử lại cùng dữ liệu trong scope đang mở.
+Client mới gửi `clientRequestId` UUID ổn định cho một thao tác ownerRemaining. Trong cùng mẻ, gửi lại khóa của **lần báo gần nhất** với cùng số phút trả trạng thái hiện tại, không tăng overrunReports, không dời mốc lần nữa và không ghi audit giả; cùng khóa khác payload trả409. Quyền thành viên/chủ mẻ vẫn kiểm tra trước replay. IDmới là báo mới và vẫn áp dụng escalation lần hai. Client cũ không gửi ID vẫn được chấp nhận, nhưng không có bảo đảm chống lặp. Không auto-retry; nếu kết quả chưa rõ phải refresh trước, UI giữ ID theo account/building/cycle nếu thử lại cùng dữ liệu, kể cả thẻ giặt bị unmount do refresh lỗi rồi mount lại trong cùng trang; không bảo đảm qua reloadtoàntrang. Mã mới dùngCSPRNGgetRandomValues nếu HTTPnội bộ không córandomUUID. Báo phút/lấy đồ có timeout15giây bao phủ cả body, timeout chỉ mở đường xác minh trạng thái chứ không tự retry.
 
 ### Mẫu mẻ giặt cho C
 
