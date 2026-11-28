@@ -9,7 +9,8 @@ import java.util.UUID;
 @Entity
 @Table(name = "wash_cycles", indexes = {
     @Index(name = "idx_cycle_machine_end", columnList = "machine_id,completed_at"),
-    @Index(name = "idx_cycle_hold", columnList = "start_hold_id")
+    @Index(name = "idx_cycle_hold", columnList = "start_hold_id"),
+    @Index(name = "idx_cycle_pickup_due", columnList = "state,estimatedEndAt")
 })
 public class WashCycle {
     public enum HandoverMode { ALLOW_TRANSFER, SELF_PICKUP }

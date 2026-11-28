@@ -134,7 +134,7 @@ export default function PushNotificationSettings() {
   return (
     <section className="surface-card push-settings" aria-labelledby="push-settings-title" aria-busy={busy || state === 'loading'}>
       <h2 className="section-title-sm" id="push-settings-title">Thông báo đến lượt trên thiết bị</h2>
-      <p className="muted-note">Nhận thông báo khi được giao lượt kiểm tra máy, kể cả khi không mở trang này. Bấm thông báo để xem trạng thái và hạn hiện tại.</p>
+      <p className="muted-note">Nhận thông báo khi được giao lượt kiểm tra máy và khi đến giờ giặt xong dự kiến, kể cả khi không mở trang này. Nhắc lấy đồ không xác nhận máy đã dừng; hãy kiểm tra tại máy trước khi lấy.</p>
       <div role="status" aria-live="polite">
         {state === 'loading' && <p>Đang kiểm tra thông báo…</p>}
         {state === 'install' && <>

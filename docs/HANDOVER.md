@@ -1,5 +1,11 @@
 # Frontend finalization — milestone 28/11/2026
 
+## Nhắc lấy đồ dự kiến — 28/11/2026
+
+- Người dùng yêu cầu thêm nhắc lấy đồ; branch `feature/wash-pickup-reminder` từ develop `43cb636`. Dùng cùng subscription, không xin quyền mới.
+- Nhắc tại giờ `estimatedEndAt`, không chờ cửa sổ SELF_PICKUP10phút, không xác nhận máy dừng. Không gửi mẻ đã hoàn tất/cần quản lý hoặc mốc quá30phút; dời giờ trước khi gửi theo mốc mới.
+- Frontend293/293 + docs/lint/typecheck và webpackbuild đạt. Browser production390/1440 với mockAPI: không overflow/pageerror/consoleerror; chỉ sửa nội dung settings và xử lý title serviceworker, chưa gửi push thật. Java tích hợp112/112đạt, 0failure/error/skipped (JDK25 compile21, `test` không clean vì JAR đang chạy). Người dùng yêu cầu tích hợp develop và xuất mã nguồn nộp bài; đang chuẩn bị PR/CI, chưa xác minh deploy và chưa nghiệm thu Apple/FCM/iPhone thật.
+
 ## Bổ sung Web Push — 28/11/2026
 
 - Nhánh hiện tại `feature/web-push-notifications`, nềndevelop `11dc64c`; người dùng yêu cầu phát hành, đang chuẩn bị PR/CI vào develop; chưa cấu hình VAPID trên Render. Mục milestone cũ phía dưới là lịch sử, không phải trạng thái nhánh mới.

@@ -22,7 +22,7 @@ Dự án web ưu tiên giao diện điện thoại; mỗi quản lý chọn số
 
 ## Thông báo đến lượt trên thiết bị
 
-Web Push hỗ trợ Chrome PC và iPhone/iPad iOS 16.4+ khi thêm web vào Màn hình chính. Bật riêng từng thiết bị trong **Tài khoản → Thông báo đến lượt**. Java gửi sau khi giao lượt kiểm tra máy thành công; không coi thông báo là xác nhận máy trống. Backend cần cấu hình VAPID; Render Free ngủ có thể làm chậm job. Xem [hướng dẫn Web Push](docs/web-push.md) để cấu hình, bật trên iPhone và kiểm thử thiết bị thật.
+Web Push hỗ trợ Chrome PC và iPhone/iPad iOS 16.4+ khi thêm web vào Màn hình chính. Bật riêng từng thiết bị trong **Tài khoản → Thông báo đến lượt**. Java gửi sau khi giao lượt kiểm tra máy thành công và nhắc lấy đồ tại giờ giặt xong dự kiến; thông báo không xác nhận máy đã dừng hoặc trống. Backend cần cấu hình VAPID; Render Free ngủ có thể làm chậm job. Xem [hướng dẫn Web Push](docs/web-push.md) để cấu hình, bật trên iPhone và kiểm thử thiết bị thật.
 
 ## Khởi chạy mã nguồn
 

@@ -38,6 +38,17 @@ describe('push-only service worker', () => {
     expect(w.showNotification).toHaveBeenCalledWith('Đến lượt giặt của bạn', expect.objectContaining({ body: 'Kiểm tra máy trước 20:38', tag: 'hold:123', data: { url: `https://laundry.example${path}` } }));
     expect(w.listeners.fetch).toBeUndefined();
   });
+  it('shows estimated finish reminder without claiming the machine stopped', async () => {
+    const w = worker();
+    const body = 'Hãy lên kiểm tra và lấy đồ nếu máy đã dừng.';
+    await w.push({ title: 'Đã đến giờ giặt xong dự kiến', body, url: path, tag: 'pickup:123' });
+    expect(w.showNotification).toHaveBeenCalledWith('Đã đến giờ giặt xong dự kiến', expect.objectContaining({ body, tag: 'pickup:123' }));
+  });
+  it('does not display arbitrary push titles', async () => {
+    const w = worker();
+    await w.push({ title: 'Máy đã dừng, hãy khởi động ngay' });
+    expect(w.showNotification).toHaveBeenCalledWith('Đến lượt giặt của bạn', expect.anything());
+  });
   it.each(['https://evil.example/login', '//evil.example', '/api/auth/logout', `${path}?token=secret`])('rejects unsafe notification navigation %s', async url => {
     const w = worker();
     await w.click(url);

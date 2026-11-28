@@ -38,7 +38,12 @@ public class PushOutboxService {
             .stream().map(PushOutbox::getId).toList();
     }
     public record Delivery(UUID id, int attempt, String endpoint, String p256dh, String auth,
-                           UUID buildingId, UUID holdId, Instant expiresAt) {}
+                           UUID buildingId, UUID holdId, Instant expiresAt, boolean pickupReminder) {
+        public Delivery(UUID id, int attempt, String endpoint, String p256dh, String auth,
+                        UUID buildingId, UUID holdId, Instant expiresAt) {
+            this(id, attempt, endpoint, p256dh, auth, buildingId, holdId, expiresAt, false);
+        }
+    }
     @Transactional
     public Delivery claim(UUID id) {
         PushOutbox row = em.find(PushOutbox.class, id, LockModeType.PESSIMISTIC_WRITE);

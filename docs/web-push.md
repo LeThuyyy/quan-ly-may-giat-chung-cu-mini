@@ -4,7 +4,13 @@
 
 Web Push báo khi Java giao **lượt kiểm tra máy** thành công. Đây không phải xác nhận máy trống, không thay thao tác kiểm tra thực tế và không thay đổi hạn giữ 8 phút. Bấm thông báo mở trang tổng quan đúng tòa; web vẫn yêu cầu đăng nhập và quyền thành viên.
 
-Thông báo trong trang tiếp tục hoạt động độc lập. Bản này chưa gửi nhắc sắp hết hạn, chưa báo mọi sự kiện giặt/chat/đổi lượt và không có hộp thư đã đọc đồng bộ thiết bị. Không hứa giao tức thời hoặc đúng một lần: mạng, hệ điều hành, Focus và nhà cung cấp push có thể trì hoãn; gửi lại khi kết quả mạng không rõ có thể trùng (dùng tag theo hold để gộp khi trình duyệt hỗ trợ).
+Thông báo trong trang tiếp tục hoạt động độc lập. Bản này chưa gửi nhắc sắp hết hạn, chưa báo mọi sự kiện giặt/chat/đổi lượt và không có hộp thư đã đọc đồng bộ thiết bị. Không hứa giao tức thời hoặc đúng một lần: mạng, hệ điều hành, Focus và nhà cung cấp push có thể trì hoãn; gửi lại khi kết quả mạng không rõ có thể trùng (dùng tag theo hold hoặc mẻ để gộp khi trình duyệt hỗ trợ).
+
+## Nhắc lấy đồ theo giờ dự kiến
+
+Dùng cùng đăng ký và quyền Web Push, không cần bật lại nếu đã đăng ký. Khi mẻ đang ACTIVE đến `estimatedEndAt`, gửi **“Đã đến giờ giặt xong dự kiến”** cho chủ mẻ, nhắc lên kiểm tra và lấy đồ **nếu máy đã dừng**. Chế độ SELF_PICKUP cũng nhắc tại giờ dự kiến, không chờ hết cửa sổ10phút.
+
+Một mẻ/thiết bị được ghi nhận một nhắc; retry khi lỗi mạng vẫn có thể trùng, dùng tag `pickup:<cycleId>`. Dời giờ dự kiến trước khi gửi thì chờ mốc mới; đã gửi thành công không nhắc lần hai cho cùng mẻ/thiết bị. Không nhắc mẻ đã lấy/chuyển đồ, hoàn tất hoặc cần quản lý. Giới hạn gửi trễ30phút từ mốc dự kiến hiện tại để không phát lại lịch sử sau khi server ngủ lâu. Không thay trạng thái máy/mẻ/hàng đợi và không coi việc nhận thông báo là xác nhận đã lấy đồ. Điều kiện được xác minh ngay trước khi job gửi; nếu hoàn tất/tắt thông báo trong lúc HTTP đã gửi thì không thu hồi chắc chắn được thông báo đang bay. Nhắc đã bị hủy vì sự cố/cần quản lý không tự phục hồi khi quản lý dời mốc; nhắc chưa gửi bị quá hạn30phút có thể theo mốc mới nếu còn số lần thử. Các bản ghi khử trùng nhắc được giữ bền vững, chưa có retention cleanup cho bảng này.
 
 ## Bật trên thiết bị
 
@@ -63,5 +69,6 @@ Render Free có thể ngủ khi không có truy cập; các job giao máy/gửi 
 3. Xác nhận máy trống và cho tài khoản thử sẵn sàng để Java giao lượt; kiểm tra cả hai thiết bị nhận, bấm mở đúng tòa, UI vẫn yêu cầu kiểm tra máy thực tế.
 4. Tắt trên một thiết bị và thử lượt mới; thiết bị còn lại vẫn nhận. Thử đăng xuất, đăng nhập tài khoản khác và bật lại, không gửi nhầm tài khoản cũ.
 5. Kiểm tra mất mạng, chặn quyền, hold đã bắt đầu/nhường/hết hạn trước khi gửi, và rollback allocation không phát thông báo.
+6. Bắt đầu mẻ thử1phút ở cả ALLOW_TRANSFER/SELF_PICKUP: tại giờ dự kiến nhận nhắc lấy đồ (không đợi10phút); lấy sớm/chuyển đồ thì không nhắc. Dời mốc trước khi gửi phải đợi mốc mới, không phát nhắc cho mốc cũ hoặc mẻ đã hoàn tất.
 
 Unit/DOM/MockMvc và transport giả không chứng minh iOS thật đã nhận. Không báo hoàn tất nghiệm thu push trên điện thoại cho đến khi thử qua HTTPS với khóa cấu hình thực tế.
