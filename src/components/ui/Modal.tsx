@@ -1,6 +1,6 @@
 'use client';
 
-import { ReactNode, useEffect, useId, useRef } from 'react';
+import { ReactNode, useEffect, useEffectEvent, useId, useRef } from 'react';
 import { XIcon } from '@/components/Icons';
 
 interface ModalProps {
@@ -29,6 +29,8 @@ export default function Modal({
   const descId = useId();
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
+  // Keep Escape current without restarting focus/scroll management on parent renders.
+  const closeOnEscape = useEffectEvent(() => onClose());
 
   useEffect(() => {
     if (!open) return;
@@ -48,7 +50,7 @@ export default function Modal({
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation();
-        onClose();
+        closeOnEscape();
       }
     };
     window.addEventListener('keydown', onKeyDown);
@@ -59,7 +61,7 @@ export default function Modal({
       document.body.style.overflow = prevOverflow;
       previousFocusRef.current?.focus?.();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 
