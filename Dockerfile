@@ -11,8 +11,9 @@ FROM node:22-bookworm-slim AS node-build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
-COPY next-env.d.ts tsconfig.json eslint.config.mjs ./
+COPY next-env.d.ts tsconfig.json eslint.config.mjs next.config.mjs ./
 COPY src ./src
+COPY public ./public
 COPY scripts ./scripts
 RUN npx next build --webpack && npm prune --omit=dev
 
@@ -33,8 +34,10 @@ ENV PORT=3000
 
 COPY --from=java-build /app/backend/target/shared-laundry-backend-*.jar /app/backend/app.jar
 COPY --from=node-build /app/package.json ./package.json
+COPY --from=node-build /app/next.config.mjs ./next.config.mjs
 COPY --from=node-build /app/node_modules ./node_modules
 COPY --from=node-build /app/.next ./.next
+COPY --from=node-build /app/public ./public
 COPY docker-entrypoint.sh /app/docker-entrypoint.sh
 RUN sed -i 's/\r$//' /app/docker-entrypoint.sh && chmod +x /app/docker-entrypoint.sh && mkdir -p /app/.data
 

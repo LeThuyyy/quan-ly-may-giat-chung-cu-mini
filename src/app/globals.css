@@ -1812,6 +1812,25 @@ footer {
   padding: var(--space-6);
 }
 
+.push-settings {
+  overflow-wrap: anywhere;
+}
+
+.push-settings .btn {
+  min-height: 44px;
+  white-space: normal;
+}
+
+.push-settings ol {
+  padding-inline-start: 22px;
+  line-height: 1.65;
+}
+
+.push-settings .muted-note {
+  max-width: 76ch;
+  font-size: 14px;
+}
+
 .surface-subtle-card {
   background: var(--surface-subtle);
   padding: var(--space-4);

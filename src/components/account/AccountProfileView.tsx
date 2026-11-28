@@ -2,6 +2,7 @@
 
 import { BuildingIcon, LogOutIcon, PlusIcon, TicketIcon, UserIcon } from '@/components/Icons';
 import StatusBadge from '@/components/ui/StatusBadge';
+import PushNotificationSettings from '@/components/PushNotificationSettings';
 import type { AccountView, BuildingSummary } from '@/types/laundry';
 
 interface AccountProfileViewProps {
@@ -105,6 +106,7 @@ export default function AccountProfileView({
           )}
         </section>
       </div>
+      <PushNotificationSettings key={account.id} />
     </div>
   );
 }

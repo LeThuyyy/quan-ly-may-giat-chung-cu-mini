@@ -16,3 +16,9 @@ services:
         value: /app/.data
       - key: DATABASE_URL
         sync: false
+      - key: WEB_PUSH_PUBLIC_KEY
+        sync: false
+      - key: WEB_PUSH_PRIVATE_KEY
+        sync: false
+      - key: WEB_PUSH_SUBJECT
+        value: https://quan-ly-may-giat-chung-cu-mini.onrender.com
