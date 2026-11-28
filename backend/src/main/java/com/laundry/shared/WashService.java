@@ -147,13 +147,27 @@ public class WashService {
         return view(c);
     }
 
-    /** Owner sees a changed duration before a handover hold: one adjustment, never silently revokes a hold. */
+    /** Legacy clients remain supported, but must supply a request ID to make retries idempotent. */
     @Transactional
     public CycleView ownerRemaining(String username, UUID buildingId, UUID cycleId, Integer remainingMinutes) {
+        return ownerRemaining(username, buildingId, cycleId, remainingMinutes, null);
+    }
+
+    /** Owner sees a changed duration before a handover hold: one adjustment, never silently revokes a hold. */
+    @Transactional
+    public CycleView ownerRemaining(String username, UUID buildingId, UUID cycleId, Integer remainingMinutes,
+                                    UUID clientRequestId) {
         lock(buildingId);
         Account actor = member(username, buildingId, false);
         WashCycle c = cycle(buildingId, cycleId);
         if (!c.getAccountId().equals(actor.getId())) throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+        // Replays describe an already committed command, not a new physical-state decision.
+        // Authorize first, then allow replay even if a hold or a later transition now exists.
+        if (clientRequestId != null && clientRequestId.equals(c.getLastOwnerAdjustmentRequestId())) {
+            if (!java.util.Objects.equals(remainingMinutes, c.getLastOwnerAdjustmentMinutes()))
+                throw conflict("Mã yêu cầu đã được dùng với số phút khác");
+            return view(c);
+        }
         if (remainingMinutes == null || remainingMinutes < 1 || remainingMinutes > 360)
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cần nhập phút còn lại (1–360)");
         if (!c.isOpen() || c.getState() != WashCycle.State.ACTIVE) throw conflict("Mẻ đang chờ quản lý hoặc đã hoàn tất");
@@ -163,6 +177,7 @@ public class WashService {
             && !clock.instant().isBefore(c.getEstimatedEndAt()))
             throw conflict("Cửa sổ tự lấy đã bắt đầu; cần quản lý xác minh trước khi dời mốc");
         c.reportRunning(clock.instant(), remainingMinutes);
+        c.rememberOwnerAdjustment(clientRequestId, remainingMinutes);
         activity.record(buildingId,actor.getId(),"WASH_REMAINING_REPORTED",c.getId(),c.getMachineId(),"ACTIVE",c.getState().name());
         if (c.getState() == WashCycle.State.NEEDS_MANAGER)
             machines.findById(c.getMachineId()).orElseThrow().flagUnusable();

@@ -28,6 +28,9 @@ public class WashCycle {
     @Enumerated(EnumType.STRING) @Column(nullable = false) private HandoverMode handoverMode;
     @Enumerated(EnumType.STRING) @Column(nullable = false) private State state;
     @Column(nullable = false) private int overrunReports;
+    // Nullable for legacy cycles/clients; committed atomically with the owner adjustment.
+    private UUID lastOwnerAdjustmentRequestId;
+    private Integer lastOwnerAdjustmentMinutes;
     @Column(name = "completed_at") private Instant completedAt;
     @Enumerated(EnumType.STRING) private Completion completion;
 
@@ -54,6 +57,12 @@ public class WashCycle {
     public HandoverMode getHandoverMode() { return handoverMode; }
     public State getState() { return state; }
     public int getOverrunReports() { return overrunReports; }
+    public UUID getLastOwnerAdjustmentRequestId() { return lastOwnerAdjustmentRequestId; }
+    public Integer getLastOwnerAdjustmentMinutes() { return lastOwnerAdjustmentMinutes; }
+    public void rememberOwnerAdjustment(UUID requestId, int minutes) {
+        lastOwnerAdjustmentRequestId = requestId;
+        lastOwnerAdjustmentMinutes = requestId == null ? null : minutes;
+    }
     public Instant getCompletedAt() { return completedAt; }
     public Completion getCompletion() { return completion; }
     public boolean isOpen() { return completedAt == null; }
