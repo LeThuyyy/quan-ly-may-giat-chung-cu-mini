@@ -91,6 +91,24 @@ describe('AuthSection', () => {
     });
   });
 
+  it('validates UTF-8 bytes for Vietnamese registration passwords', async () => {
+    const onRegister = vi.fn().mockResolvedValue(true);
+    render(<AuthSection busy={false} onLogin={vi.fn()} onRegister={onRegister} onClearMessages={vi.fn()} />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Đăng ký' }));
+    fireEvent.change(screen.getByLabelText('Tên đăng nhập'), { target: { value: 'unicode-user' } });
+    fireEvent.change(screen.getByLabelText('Tên hiển thị'), { target: { value: 'Unicode' } });
+    for (const label of ['Mật khẩu', 'Xác nhận mật khẩu']) {
+      fireEvent.change(screen.getByLabelText(label), { target: { value: 'ắ'.repeat(25) } });
+    }
+    fireEvent.click(screen.getByRole('button', { name: 'Tạo tài khoản' }));
+    expect(screen.getByText('Mật khẩu tối đa 72 byte UTF-8; ký tự tiếng Việt có thể chiếm nhiều byte.')).toBeTruthy();
+    expect(onRegister).not.toHaveBeenCalled();
+    for (const label of ['Mật khẩu', 'Xác nhận mật khẩu']) {
+      fireEvent.change(screen.getByLabelText(label), { target: { value: 'ắ'.repeat(24) } });
+    }
+    fireEvent.click(screen.getByRole('button', { name: 'Tạo tài khoản' }));
+    await waitFor(() => expect(onRegister).toHaveBeenCalledWith('unicode-user', 'Unicode', 'ắ'.repeat(24)));
+  });
   it('renders backend error alert inside the auth card and disables submit while busy', () => {
     render(
       <AuthSection

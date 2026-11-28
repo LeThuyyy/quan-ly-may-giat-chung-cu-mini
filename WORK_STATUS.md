@@ -2,6 +2,12 @@
 
 > Bắt đầu bằng file này và `git status --short --branch`. Chỉ mở các file liên quan tác vụ; không coi nội dung này là quyền phê duyệt merge/push.
 
+## RÀ SOÁT TÍNH NĂNG HIỆN CÓ — 2026-11-28
+
+- Người dùng yêu cầu sửa lỗi ưu tiên quan trọng, mỗi lỗi commit/push riêng. ChromeFCM dấu`:` đã mergePR17 `1141294`, Java113test và CIgreen. Chưa khẳng định Render deploy/thiết bị nhận thật.
+- Đăng ký mật khẩu >72byteUTF-8 (73ASCII hoặc25ký tự`ắ`) đã tái hiện ServletException/500 do BCrypt. Sửa kiểm tra400 trước băm + lỗi inline/hint đăng ký; không cắt password, không thay dữ liệu/hash tài khoản cũ. Test biên24ký tự`ắ`=72byte đăng ký/đăng nhập đạt; LaundryApiTest7/7 và AuthSection5/5 đạt.
+- Audit chưa tìm thấy bypassquyền/cấp trùng máy trong các đường core đã đọc. Các lỗi đang sửa riêng: parent mutation đổi tòa trả chậm, modal mất focus khi gõ, swap không live-refresh, báo lỗi kỹ thuật khi có mẻ cũ, retryownerRemaining gây falseincident. Không coi audit này là chứng nhận hết mọi lỗi.
+
 ## SỬA ĐĂNG KÝ CHROME WEB PUSH — 2026-11-28
 
 - Người dùng báo Chrome hiện400 “Dữ liệu gửi lên không hợp lệ” khi bấm bật. Tái hiện bằng MockMvc token FCM tổng hợp có dấu`:`: expected200, actual400. Nguyên nhân xác minh được: regex path quá chặt, chặn dấu`:` hợp lệ trong FCM token (chưa thu thập endpoint thật của người dùng).

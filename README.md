@@ -20,6 +20,10 @@ Dự án web ưu tiên giao diện điện thoại; mỗi quản lý chọn số
 - Khi vào hàng, cư dân chọn **Sẵn sàng nhận máy** hoặc **Chưa sẵn sàng**; trạng thái có thể đổi bằng một nút ngay trên trang tòa. Hệ thống chỉ giao cho người đang sẵn sàng theo thứ tự hàng, bỏ qua người chưa sẵn sàng mà không xóa vị trí của họ. Nếu không ai sẵn sàng, máy chờ chứ không đếm hạn cho ai.
 - Khi hệ thống giao máy cho người sẵn sàng, hạn bắt đầu giặt 8 phút chạy ngay từ thời điểm giao, không đợi họ lên xác nhận máy. Nếu họ lên và báo máy chưa dùng được trong hạn, lượt giữ được giải phóng và họ được trả về **cùng hàng đợi theo mốc thứ tự khi được giao**, không có vé ưu tiên nhảy lên đầu về sau. Cửa sổ tự lấy 10 phút diễn ra trước khi giao lượt kiểm tra.
 
+## Giới hạn mật khẩu
+
+Đăng ký yêu cầu ít nhất12ký tự và tối đa72byteUTF-8 do BCrypt; ký tự tiếng Việt có thể chiếm nhiều byte. Frontend hiển thị lỗi tại trường nhập và Java kiểm tra trước khi băm, không cắt mật khẩu. Đăng nhập tài khoản hiện có vẫn giữ hợp đồng cũ, không tự thay mật khẩu hoặc dữ liệu.
+
 ## Thông báo đến lượt trên thiết bị
 
 Web Push hỗ trợ Chrome PC và iPhone/iPad iOS 16.4+ khi thêm web vào Màn hình chính. Bật riêng từng thiết bị trong **Tài khoản → Thông báo đến lượt**. Java gửi sau khi giao lượt kiểm tra máy thành công và nhắc lấy đồ tại giờ giặt xong dự kiến; thông báo không xác nhận máy đã dừng hoặc trống. Backend cần cấu hình VAPID; Render Free ngủ có thể làm chậm job. Xem [hướng dẫn Web Push](docs/web-push.md) để cấu hình, bật trên iPhone và kiểm thử thiết bị thật.
