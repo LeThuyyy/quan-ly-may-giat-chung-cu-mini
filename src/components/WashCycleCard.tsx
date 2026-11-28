@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useScopedActions } from '@/lib/use-scoped-actions';
+import { randomUuid } from '@/lib/random-uuid';
 
 export type HandoverMode = 'ALLOW_TRANSFER' | 'SELF_PICKUP';
 export interface WashCycleView {
@@ -87,7 +88,7 @@ export default function WashCycleCard({ buildingId, cycles, machineLabels, onRef
     const requestKey = `${buildingId}:${cycle.id}`;
     const previous = remainingRequests.current.get(requestKey);
     try {
-      const request = previous?.minutes === ownerMinutes ? previous : { minutes: ownerMinutes, id: crypto.randomUUID() };
+      const request = previous?.minutes === ownerMinutes ? previous : { minutes: ownerMinutes, id: randomUuid() };
       remainingRequests.current.set(requestKey, request);
       const res = await scopedFetch(`/api/buildings/${buildingId}/wash-cycles/${cycle.id}/remaining`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, cache: 'no-store',
