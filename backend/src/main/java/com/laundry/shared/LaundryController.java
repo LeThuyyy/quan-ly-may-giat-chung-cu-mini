@@ -35,6 +35,8 @@ public class LaundryController {
     @PostMapping("/accounts") @ResponseStatus(HttpStatus.CREATED)
     public AccountView register(@Valid @RequestBody RegisterRequest request) {
         String username = request.username().trim().toLowerCase(java.util.Locale.ROOT);
+        if (request.password().getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 72)
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Mật khẩu tối đa 72 byte UTF-8; ký tự tiếng Việt có thể chiếm nhiều byte");
         if (accounts.findByUsername(username).isPresent()) throw new ResponseStatusException(HttpStatus.CONFLICT, "Tên đăng nhập đã tồn tại");
         try {
             Account account = accounts.saveAndFlush(new Account(username, passwords.encode(request.password()), request.displayName().trim()));

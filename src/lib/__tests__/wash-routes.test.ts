@@ -4,6 +4,7 @@ import { callJavaWithSession } from '../java-bridge';
 import { POST as start } from '../../app/api/buildings/[id]/holds/[holdId]/start/route';
 import { POST as reportRunning } from '../../app/api/buildings/[id]/holds/[holdId]/report-running/route';
 import { POST as transfer } from '../../app/api/buildings/[id]/wash-cycles/[cycleId]/transfer/route';
+import { POST as remaining } from '../../app/api/buildings/[id]/wash-cycles/[cycleId]/remaining/route';
 import { POST as pickup } from '../../app/api/buildings/[id]/wash-cycles/[cycleId]/pickup/route';
 import { GET as mine } from '../../app/api/buildings/[id]/wash-cycles/me/route';
 import { GET as issues } from '../../app/api/buildings/[id]/wash-cycles/issues/route';
@@ -48,6 +49,24 @@ describe('B reuses A single start endpoint', () => {
     const res = await start(request(path, 'POST', { durationMinutes: 30, handoverMode: 'ALLOW_TRANSFER' }), params);
     expect(res.status).toBe(409);
     expect(await res.json()).toEqual({ error: 'Lượt đã hết hạn' });
+  });
+});
+
+describe('owner remaining-time idempotency route', () => {
+  const path = `/api/buildings/${id}/wash-cycles/${cycleId}/remaining`;
+  const params = { params: Promise.resolve({ id, cycleId }) };
+  it('forwards an operation UUID and minutes, not client authority', async () => {
+    const response = await remaining(request(path, 'POST', { remainingMinutes: 12, clientRequestId: holdId, accountId: 'other' }), params);
+    expect(response.status).toBe(200);
+    expect(bridge).toHaveBeenCalledWith(sessionId, 'POST', path, { remainingMinutes: 12, clientRequestId: holdId });
+  });
+  it('rejects invalid operation IDs before Java', async () => {
+    expect((await remaining(request(path, 'POST', { remainingMinutes: 12, clientRequestId: 'bad' }), params)).status).toBe(400);
+    expect(bridge).not.toHaveBeenCalled();
+  });
+  it('preserves legacy requests without operation ID', async () => {
+    await remaining(request(path, 'POST', { remainingMinutes: 12 }), params);
+    expect(bridge).toHaveBeenCalledWith(sessionId, 'POST', path, { remainingMinutes: 12 });
   });
 });
 

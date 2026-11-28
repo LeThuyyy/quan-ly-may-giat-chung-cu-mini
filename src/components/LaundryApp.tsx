@@ -102,6 +102,37 @@ export default function LaundryApp({ initialBuildingId, initialView }: LaundryAp
   const activeManualRefreshCount = useRef(0);
   const consecutiveSilentFailures = useRef(0);
   const buildingDetailFor = useRef<string | null>(null);
+  const mutationGeneration = useRef(0);
+  const busyOperation = useRef(0);
+  const buildingOperation = useRef<number | null>(null);
+
+  useEffect(() => {
+    mutationGeneration.current += 1;
+    return () => {
+      // A -> B -> A is a new scope, even if the final building/account IDs match.
+      mutationGeneration.current += 1;
+      if (buildingOperation.current !== null && buildingOperation.current === busyOperation.current) {
+        busyOperation.current += 1;
+        buildingOperation.current = null;
+        setBusy(false);
+      }
+    };
+  }, [account?.id, selectedId, selectedRole, selectedStatus]);
+
+  function beginOperation(buildingScoped = false) {
+    const operation = ++busyOperation.current;
+    const generation = mutationGeneration.current;
+    buildingOperation.current = buildingScoped ? operation : null;
+    setBusy(true);
+    return {
+      isCurrent: () => operation === busyOperation.current && generation === mutationGeneration.current,
+      finish: () => {
+        if (operation !== busyOperation.current) return;
+        buildingOperation.current = null;
+        setBusy(false);
+      },
+    };
+  }
 
   const navigate = useCallback(
     (nextView: AppView, nextBuildingId: string | null = selectedId) => {
@@ -172,8 +203,9 @@ export default function LaundryApp({ initialBuildingId, initialView }: LaundryAp
     setError('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
   }, [resetBuildingSnapshot]);
 
-  const loadBuildings = useCallback(async () => {
+  const loadBuildings = useCallback(async (isCurrent: () => boolean = () => true, keepSelection = false) => {
     const res = await apiJson<BuildingSummary[]>('/api/buildings');
+    if (!isCurrent()) return;
     if (res.ok && res.data) {
       setBuildings(res.data);
       let storedId: string | null = null;
@@ -183,6 +215,7 @@ export default function LaundryApp({ initialBuildingId, initialView }: LaundryAp
         storedId = null;
       }
       setSelectedId((prev) => {
+        if (keepSelection) return prev;
         if (prev && res.data!.some((b) => b.id === prev)) return prev;
         if (storedId && res.data!.some((b) => b.id === storedId)) return storedId;
         const firstApproved = res.data!.find((b) => b.status === 'APPROVED');
@@ -541,7 +574,7 @@ export default function LaundryApp({ initialBuildingId, initialView }: LaundryAp
   const handleRegister = async (username: string, displayName: string, password: string): Promise<boolean> => {
     setError(null);
     setNotice(null);
-    setBusy(true);
+    const operation = beginOperation();
     try {
       const res = await apiJson<AccountView>('/api/auth/register', {
         method: 'POST',
@@ -554,14 +587,14 @@ export default function LaundryApp({ initialBuildingId, initialView }: LaundryAp
       setNotice('Đăng ký thành công. Vui lòng đăng nhập để tiếp tục.');
       return true;
     } finally {
-      setBusy(false);
+      operation.finish();
     }
   };
 
   const handleLogin = async (username: string, password: string) => {
     setError(null);
     setNotice(null);
-    setBusy(true);
+    const operation = beginOperation();
     try {
       const res = await apiJson<AccountView>('/api/auth/login', {
         method: 'POST',
@@ -575,12 +608,12 @@ export default function LaundryApp({ initialBuildingId, initialView }: LaundryAp
       setActiveView('overview');
       await loadBuildings();
     } finally {
-      setBusy(false);
+      operation.finish();
     }
   };
 
   const handleLogout = async () => {
-    setBusy(true);
+    const operation = beginOperation();
     setError(null);
     setNotice(null);
     try {
@@ -604,12 +637,12 @@ export default function LaundryApp({ initialBuildingId, initialView }: LaundryAp
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Chưa đăng xuất được. Vui lòng thử lại.');
     } finally {
-      setBusy(false);
+      operation.finish();
     }
   };
 
   const handleCreateBuilding = async (name: string, machineCount: number): Promise<boolean> => {
-    setBusy(true);
+    const operation = beginOperation(true);
     setError(null);
     setNotice(null);
     try {
@@ -617,12 +650,14 @@ export default function LaundryApp({ initialBuildingId, initialView }: LaundryAp
         method: 'POST',
         body: JSON.stringify({ name, machineCount }),
       });
+      if (!operation.isCurrent()) return false;
       if (!res.ok || !res.data) {
         setError(res.error ?? 'Không tạo được tòa.');
         return false;
       }
       setNotice(`Đã tạo tòa "${res.data.name}" với ${res.data.machines.length} máy.`);
-      await loadBuildings();
+      await loadBuildings(operation.isCurrent, true);
+      if (!operation.isCurrent()) return false;
       setSelectedId(res.data.id);
       setActiveView('overview');
       try {
@@ -633,12 +668,12 @@ export default function LaundryApp({ initialBuildingId, initialView }: LaundryAp
       syncBrowserUrl(res.data.id, 'overview');
       return true;
     } finally {
-      setBusy(false);
+      operation.finish();
     }
   };
 
   const handleJoinByToken = async (token: string): Promise<boolean> => {
-    setBusy(true);
+    const operation = beginOperation(true);
     setError(null);
     setNotice(null);
     try {
@@ -646,25 +681,27 @@ export default function LaundryApp({ initialBuildingId, initialView }: LaundryAp
         `/api/invitations/${encodeURIComponent(token)}/join`,
         { method: 'POST' },
       );
+      if (!operation.isCurrent()) return false;
       if (!res.ok) {
         setError(res.error ?? 'Không gửi được yêu cầu tham gia.');
         return false;
       }
       setNotice('Đã gửi yêu cầu tham gia tòa. Hãy chờ quản lý phê duyệt.');
-      await loadBuildings();
+      await loadBuildings(operation.isCurrent, true);
+      if (!operation.isCurrent()) return false;
       if (res.data?.buildingId) {
         setSelectedId(res.data.buildingId);
         setActiveView('overview');
       }
       return true;
     } finally {
-      setBusy(false);
+      operation.finish();
     }
   };
 
   const handleAddMachine = async (label: string): Promise<boolean> => {
     if (!selectedSummary || selectedSummary.role !== 'MANAGER') return false;
-    setBusy(true);
+    const operation = beginOperation(true);
     setError(null);
     setNotice(null);
     try {
@@ -672,21 +709,22 @@ export default function LaundryApp({ initialBuildingId, initialView }: LaundryAp
         method: 'POST',
         body: JSON.stringify({ label }),
       });
+      if (!operation.isCurrent()) return false;
       if (!res.ok || !res.data) {
         setError(res.error ?? 'Không thêm được máy.');
         return false;
       }
       setNotice(`Đã thêm "${res.data.label}".`);
       await loadBuildingDetail(selectedSummary).catch(() => {});
-      return true;
+      return operation.isCurrent();
     } finally {
-      setBusy(false);
+      operation.finish();
     }
   };
 
   const handleToggleMaintenance = async (machine: MachineView) => {
     if (!selectedSummary || selectedSummary.role !== 'MANAGER') return;
-    setBusy(true);
+    const operation = beginOperation(true);
     setError(null);
     setNotice(null);
     const nextMaint = machine.status !== 'MAINTENANCE';
@@ -698,6 +736,7 @@ export default function LaundryApp({ initialBuildingId, initialView }: LaundryAp
           body: JSON.stringify({ maintenance: nextMaint }),
         },
       );
+      if (!operation.isCurrent()) return;
       if (!res.ok) {
         setError(res.error ?? 'Không cập nhật được trạng thái bảo trì.');
         return;
@@ -709,13 +748,13 @@ export default function LaundryApp({ initialBuildingId, initialView }: LaundryAp
       );
       await loadBuildingDetail(selectedSummary).catch(() => {});
     } finally {
-      setBusy(false);
+      operation.finish();
     }
   };
 
   const handleCreateInvite = async () => {
     if (!selectedSummary || selectedSummary.role !== 'MANAGER') return;
-    setBusy(true);
+    const operation = beginOperation(true);
     setError(null);
     setNotice(null);
     try {
@@ -723,6 +762,7 @@ export default function LaundryApp({ initialBuildingId, initialView }: LaundryAp
         `/api/buildings/${selectedSummary.id}/invitations`,
         { method: 'POST' },
       );
+      if (!operation.isCurrent()) return;
       if (!res.ok || !res.data) {
         setError(res.error ?? 'Không tạo được mã mời.');
         return;
@@ -731,13 +771,13 @@ export default function LaundryApp({ initialBuildingId, initialView }: LaundryAp
       setNotice('Đã tạo mã mời có hiệu lực 7 ngày.');
       await loadBuildingDetail(selectedSummary).catch(() => {});
     } finally {
-      setBusy(false);
+      operation.finish();
     }
   };
 
   const handleApproveMember = async (accountId: string) => {
     if (!selectedSummary || selectedSummary.role !== 'MANAGER') return;
-    setBusy(true);
+    const operation = beginOperation(true);
     setError(null);
     setNotice(null);
     try {
@@ -745,6 +785,7 @@ export default function LaundryApp({ initialBuildingId, initialView }: LaundryAp
         `/api/buildings/${selectedSummary.id}/members/${accountId}/approve`,
         { method: 'POST' },
       );
+      if (!operation.isCurrent()) return;
       if (!res.ok) {
         setError(res.error ?? 'Không duyệt được thành viên.');
         return;
@@ -752,13 +793,13 @@ export default function LaundryApp({ initialBuildingId, initialView }: LaundryAp
       setNotice('Đã duyệt thành viên vào tòa.');
       await loadBuildingDetail(selectedSummary).catch(() => {});
     } finally {
-      setBusy(false);
+      operation.finish();
     }
   };
 
   const handleChangeMemberRole = async (accountId: string, role: 'MANAGER' | 'RESIDENT') => {
     if (!selectedSummary || selectedSummary.role !== 'MANAGER') return;
-    setBusy(true);
+    const operation = beginOperation(true);
     setError(null);
     setNotice(null);
     try {
@@ -769,15 +810,17 @@ export default function LaundryApp({ initialBuildingId, initialView }: LaundryAp
           body: JSON.stringify({ role }),
         },
       );
+      if (!operation.isCurrent()) return;
       if (!res.ok) {
         setError(res.error ?? 'Không cập nhật được vai trò thành viên.');
         return;
       }
       setNotice(role === 'MANAGER' ? 'Đã cấp quyền quản lý.' : 'Đã hạ vai trò về cư dân.');
-      await loadBuildings();
+      await loadBuildings(operation.isCurrent);
+      if (!operation.isCurrent()) return;
       await loadBuildingDetail(selectedSummary).catch(() => {});
     } finally {
-      setBusy(false);
+      operation.finish();
     }
   };
 

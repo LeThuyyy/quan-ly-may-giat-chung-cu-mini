@@ -36,6 +36,8 @@ interface SwapsViewProps {
 }
 
 const PAGE_SIZE = 20;
+const POLL_INTERVAL_MS = 12000;
+const REQUEST_TIMEOUT_MS = 15000;
 
 const STATUS_UI: Record<string, { label: string; tone: 'warning' | 'success' | 'error' | 'neutral' }> = {
   PENDING: { label: 'Chờ trả lời', tone: 'warning' },
@@ -83,19 +85,16 @@ export default function SwapsView({
   const mounted = useRef(false);
   const inFlight = useRef(false);
   const pending = useRef<AbortController | null>(null);
+  const silentRequest = useRef(false);
+  const poll = useRef<() => Promise<void>>(async () => {});
+  const refresh = useRef<() => Promise<void>>(async () => {});
+  const previousRefreshKey = useRef(refreshKey);
+  const schedulePoll = useRef<() => void>(() => {});
   const callbacks = useRef({ onRefresh, onSessionExpired });
 
   useEffect(() => {
     callbacks.current = { onRefresh, onSessionExpired };
   }, [onRefresh, onSessionExpired]);
-
-  useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-      pending.current?.abort();
-    };
-  }, []);
 
   async function loadAll(signal: AbortSignal, targetTab: SwapTab, targetPage: number) {
     const root = `/api/buildings/${buildingId}/swaps`;
@@ -107,8 +106,9 @@ export default function SwapsView({
 
     if (!mounted.current || signal.aborted) return;
     if ([pendingRes, outgoingRes, historyRes].some((r) => r.status === 401)) {
+      setBlocked(true);
       callbacks.current.onSessionExpired();
-      return;
+      throw new Error('Phiên đăng nhập đã hết hạn.');
     }
     if (!pendingRes.ok || !outgoingRes.ok || !historyRes.ok) {
       throw new Error('Không tải được danh sách đổi lượt. Hãy tải lại.');
@@ -138,16 +138,28 @@ export default function SwapsView({
     swapId?: string,
     targetTab = tab,
     targetPage = page,
+    silent = false,
   ) {
-    if (!mounted.current || inFlight.current) return;
+    if (!mounted.current || (!action && document.hidden)) return;
+    if (inFlight.current) {
+      if (silent || !silentRequest.current) return;
+      // A user action takes priority over a silent read, never over another mutation.
+      pending.current?.abort();
+    }
     inFlight.current = true;
-    setBusy(true);
-    setBlocked(true);
-    setNotice('');
+    silentRequest.current = silent;
+    if (!silent) {
+      setBusy(true);
+      setBlocked(true);
+      setNotice('');
+    }
     const controller = new AbortController();
     pending.current = controller;
+    let timedOut = false;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    let onAbort: (() => void) | undefined;
 
-    try {
+    const execute = async () => {
       if (action) {
         const res = await fetch(
           `/api/buildings/${buildingId}/swaps${action === 'create' ? '' : `/${swapId}/${action}`}`,
@@ -185,20 +197,98 @@ export default function SwapsView({
         );
       }
       await loadAll(controller.signal, targetTab, targetPage);
+    };
+
+    try {
+      // Bound the entire operation, including JSON bodies and the parent's refresh.
+      await Promise.race([
+        execute(),
+        new Promise<never>((_, reject) => {
+          onAbort = () => reject(new Error(timedOut
+            ? 'Yêu cầu quá thời gian. Hãy tải lại trạng thái trước khi thử lại.'
+            : 'Yêu cầu đã bị hủy.'));
+          controller.signal.addEventListener('abort', onAbort, { once: true });
+          timeout = setTimeout(() => {
+            timedOut = true;
+            controller.abort();
+          }, REQUEST_TIMEOUT_MS);
+        }),
+      ]);
     } catch (err) {
-      if (mounted.current && !controller.signal.aborted) {
+      if (mounted.current && pending.current === controller && (timedOut || !controller.signal.aborted)) {
+        // A failed background read leaves stale data; only a complete load may unlock actions.
+        setBlocked(true);
         setError(err instanceof Error ? err.message : 'Chưa rõ kết quả. Hãy thử tải lại.');
       }
     } finally {
-      inFlight.current = false;
-      if (mounted.current) setBusy(false);
+      clearTimeout(timeout);
+      if (onAbort) controller.signal.removeEventListener('abort', onAbort);
+      controller.abort();
+      if (mounted.current && pending.current === controller) {
+        pending.current = null;
+        inFlight.current = false;
+        silentRequest.current = false;
+        setBusy(false);
+        schedulePoll.current();
+      }
     }
   }
 
   useEffect(() => {
-    void Promise.resolve().then(() => run());
+    poll.current = () => run(undefined, undefined, tab, page, true);
+    refresh.current = () => run();
+  });
+
+  useEffect(() => {
+    mounted.current = true;
+    inFlight.current = false;
+    let active = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const schedule = () => {
+      clearTimeout(timer);
+      if (active && !document.hidden && !inFlight.current) {
+        timer = setTimeout(() => void poll.current(), POLL_INTERVAL_MS);
+      }
+    };
+    schedulePoll.current = schedule;
+    const onVisibilityChange = () => {
+      clearTimeout(timer);
+      if (!document.hidden) void poll.current();
+      else if (silentRequest.current) pending.current?.abort();
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    void Promise.resolve().then(() => {
+      if (!active) return;
+      setSelectedTarget('');
+      setTab('incoming');
+      setPage(0);
+      setIncoming([]);
+      setOutgoing([]);
+      setHistory([]);
+      setHasNext(false);
+      setBlocked(true);
+      setBusy(true);
+      setError('');
+      setNotice('');
+      void run(undefined, undefined, 'incoming', 0);
+    });
+    return () => {
+      active = false;
+      mounted.current = false;
+      clearTimeout(timer);
+      pending.current?.abort();
+      pending.current = null;
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [buildingId, refreshKey]);
+  }, [buildingId, accountId]);
+
+  useEffect(() => {
+    if (previousRefreshKey.current !== refreshKey) {
+      previousRefreshKey.current = refreshKey;
+      void refresh.current();
+    }
+  }, [refreshKey]);
 
   const sorted = [...entries].sort((a, b) => a.position - b.position);
   const ownIndex = sorted.findIndex((e) => e.accountId === accountId);
@@ -270,7 +360,19 @@ export default function SwapsView({
         )}
       </section>
 
-      {error && <p className="alert alert-error" role="alert">{error}</p>}
+      {error && (
+        <div className="alert alert-error" role="alert">
+          <p>{error}</p>
+          <button
+            type="button"
+            className="btn btn-outline"
+            disabled={busy}
+            onClick={() => void run()}
+          >
+            Tải lại danh sách đổi lượt
+          </button>
+        </div>
+      )}
       {notice && <p className="alert alert-ok" role="status">{notice}</p>}
 
       <section className="surface-card" aria-label="Danh sách yêu cầu đổi lượt">

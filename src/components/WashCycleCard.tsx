@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useScopedActions } from '@/lib/use-scoped-actions';
+import { ownerAdjustmentRequest, resolveOwnerAdjustment } from '@/lib/owner-adjustment-requests';
 
 export type HandoverMode = 'ALLOW_TRANSFER' | 'SELF_PICKUP';
 export interface WashCycleView {
@@ -36,7 +37,7 @@ export default function WashCycleCard({ buildingId, cycles, machineLabels, onRef
   onRefresh: () => Promise<void>;
   onSessionExpired: () => void;
 }) {
-  const { scopedFetch, refresh, sessionExpired } = useScopedActions(onRefresh, onSessionExpired);
+  const { scopedJson, refresh, sessionExpired } = useScopedActions(onRefresh, onSessionExpired);
   const [now, setNow] = useState<number | null>(null);
   const [checkedId, setCheckedId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -64,14 +65,13 @@ export default function WashCycleCard({ buildingId, cycles, machineLabels, onRef
     if (busy || uncertain || checkedId !== cycle.id) return;
     setBusy(true); setError(null);
     try {
-      const res = await scopedFetch(`/api/buildings/${buildingId}/wash-cycles/${cycle.id}/pickup`, {
+      const res = await scopedJson(`/api/buildings/${buildingId}/wash-cycles/${cycle.id}/pickup`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ physicallyConfirmed: true }), cache: 'no-store',
       });
       if (res.status === 401) { sessionExpired(); return; }
       if (!res.ok) {
-        const body = await res.json().catch(() => null) as { error?: string } | null;
-        setError(body?.error ?? 'Không xác nhận được lấy đồ.'); setUncertain(true); return;
+        setError(res.error ?? 'Không xác nhận được lấy đồ.'); setUncertain(true); return;
       }
       setNotice('Đã hoàn tất mẻ cũ và giải phóng yêu cầu giặt.');
       setCheckedId(null);
@@ -83,18 +83,22 @@ export default function WashCycleCard({ buildingId, cycles, machineLabels, onRef
   async function updateRemaining(cycle: WashCycleView) {
     if (busy || uncertain || !Number.isInteger(ownerMinutes) || ownerMinutes < 1 || ownerMinutes > 360) return;
     setBusy(true); setError(null);
+    const requestKey = `${cycle.accountId}:${buildingId}:${cycle.id}`;
     try {
-      const res = await scopedFetch(`/api/buildings/${buildingId}/wash-cycles/${cycle.id}/remaining`, {
+      const request = ownerAdjustmentRequest(requestKey, ownerMinutes);
+      const res = await scopedJson(`/api/buildings/${buildingId}/wash-cycles/${cycle.id}/remaining`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, cache: 'no-store',
-        body: JSON.stringify({ remainingMinutes: ownerMinutes }),
+        body: JSON.stringify({ remainingMinutes: ownerMinutes, clientRequestId: request.id }),
       });
       if (res.status === 401) { sessionExpired(); return; }
       if (!res.ok) {
-        const responseBody = await res.json().catch(() => null) as { error?: string } | null;
-        setError(responseBody?.error ?? 'Không thay đổi được giờ dự kiến.'); setUncertain(true); return;
+        setError(res.error ?? 'Không thay đổi được giờ dự kiến.'); setUncertain(true); return;
       }
       setNotice('Đã ghi nhận thời gian còn lại. Kiểm tra mốc dự kiến mới từ máy chủ.');
-      try { await refresh(); } catch { setUncertain(true); setError('Đã ghi nhận nhưng chưa tải được trạng thái. Không gửi lại.'); }
+      try {
+        await refresh();
+        resolveOwnerAdjustment(requestKey);
+      } catch { setUncertain(true); setError('Đã ghi nhận nhưng chưa tải được trạng thái. Không gửi lại.'); }
     } catch { setUncertain(true); setError('Mất kết nối, chưa rõ kết quả. Hãy tải lại trước.'); }
     finally { setBusy(false); }
   }
@@ -115,7 +119,7 @@ export default function WashCycleCard({ buildingId, cycles, machineLabels, onRef
         <p role="timer">Còn dự kiến: <strong>{remaining === null ? '--:--' : `${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, '0')}`}</strong></p>
         <p className="muted-note">Đồng hồ về 0 KHÔNG có nghĩa máy đã dừng. Người dùng phải kiểm tra thực tế.</p>
         {c.state === 'ACTIVE' && <>
-          {c.phase === 'RUNNING' && <div className="field">
+          {(c.phase === 'RUNNING' || (c.phase === 'INSPECTION_ELIGIBLE' && c.handoverMode === 'ALLOW_TRANSFER')) && <div className="field">
             <label>Phút còn lại thực tế trên bảng máy (nếu thay đổi):
               <input type="number" value={ownerMinutes} min={1} max={360}
                 onChange={e => setOwnerMinutes(Number(e.target.value))} disabled={busy || uncertain} />

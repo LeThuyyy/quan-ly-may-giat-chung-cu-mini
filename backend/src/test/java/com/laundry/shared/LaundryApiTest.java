@@ -66,6 +66,22 @@ class LaundryApiTest {
         mvc.perform(get("/api/buildings").session(session)).andExpect(status().isOk());
     }
 
+    @Test void bcryptPasswordByteLimitIsValidatedWithoutServerError() throws Exception {
+        for (String password : java.util.List.of("a".repeat(73), "ắ".repeat(25))) {
+            String username = "long-" + java.util.UUID.randomUUID();
+            String body = mapper.writeValueAsString(java.util.Map.of("username", username, "displayName", "Name", "password", password));
+            mvc.perform(post("/api/accounts").with(csrf()).contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isBadRequest());
+        }
+        String username = "boundary-" + java.util.UUID.randomUUID();
+        String password = "ắ".repeat(24);
+        String registration = mapper.writeValueAsString(java.util.Map.of("username", username, "displayName", "Name", "password", password));
+        mvc.perform(post("/api/accounts").with(csrf()).contentType(MediaType.APPLICATION_JSON).content(registration))
+            .andExpect(status().isCreated());
+        mvc.perform(post("/api/auth/login").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+            .content(mapper.writeValueAsString(java.util.Map.of("username", username, "password", password))))
+            .andExpect(status().isOk());
+    }
     @Test void createBuildingWithChosenMachineCountAndRejectUnauthorizedReader() throws Exception {
         MockHttpSession session = registerAndLogin("manager", "Manager");
         String response = mvc.perform(post("/api/buildings").session(session).with(csrf())

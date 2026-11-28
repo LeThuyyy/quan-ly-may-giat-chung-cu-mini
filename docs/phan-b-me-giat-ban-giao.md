@@ -16,12 +16,16 @@
 | GET | `/holds/{holdId}/handover` | Chính chủ lượt đang giữ, trả mẻ cũ chưa bàn giao hoặc null |
 | POST | `/wash-cycles/{cycleId}/pickup` | Chủ mẻ xác nhận đã thấy máy dừng và lấy hết đồ; body `{ "physicallyConfirmed": true }` |
 | POST | `/wash-cycles/{cycleId}/transfer` | Chủ lượt tiếp theo, nhận đúng máy sau mốc được kiểm tra; body `{ "holdId": "uuid", "physicallyConfirmed": true }` |
-| POST | `/wash-cycles/{cycleId}/remaining` | Chủ mẻ báo số phút còn lại trước khi giao lượt kiểm tra (không âm thầm kéo dài hạn đã giao); `{ "remainingMinutes": 12 }` |
+| POST | `/wash-cycles/{cycleId}/remaining` | Chủ mẻ báo số phút còn lại trước khi giao lượt kiểm tra (không âm thầm kéo dài hạn đã giao); `{ "remainingMinutes": 12, "clientRequestId": "uuid" }` |
 | POST | `/holds/{holdId}/report-running` | Người giữ lượt báo còn chạy; body `{ "remainingMinutes": 12 }` hoặc null (không rõ) |
 | GET | `/wash-cycles/issues` | Chỉ quản lý; danh sách mẻ đang chờ quản lý |
 | POST | `/wash-cycles/{cycleId}/resolve` | Chỉ quản lý; `{ "action": "CLEARED", "physicallyConfirmed": true }`, hoặc `DEFER` kèm `remainingMinutes`, hoặc `MAINTENANCE` |
 
 Tất cả API mutation Java dùng HttpSession/CSRF, Next.js route dùng session bridge, xác thực người dùng từ Java `Authentication`. Lỗi 401/403/404/409/502 được giữ nguyên; xác nhận trống máy của quản lý không được bỏ qua mẻ cũ. Thao tác nghi kết quả do mất mạng: **tải lại trước khi gửi tiếp**.
+
+### Gửi lại báo phút còn lại
+
+Client mới gửi `clientRequestId` UUID ổn định cho một thao tác ownerRemaining. Trong cùng mẻ, gửi lại khóa của **lần báo gần nhất** với cùng số phút trả trạng thái hiện tại, không tăng overrunReports, không dời mốc lần nữa và không ghi audit giả; cùng khóa khác payload trả409. Quyền thành viên/chủ mẻ vẫn kiểm tra trước replay. IDmới là báo mới và vẫn áp dụng escalation lần hai. Client cũ không gửi ID vẫn được chấp nhận, nhưng không có bảo đảm chống lặp. Không auto-retry; nếu kết quả chưa rõ phải refresh trước, UI giữ ID theo account/building/cycle nếu thử lại cùng dữ liệu, kể cả thẻ giặt bị unmount do refresh lỗi rồi mount lại trong cùng trang; không bảo đảm qua reloadtoàntrang. Mã mới dùngCSPRNGgetRandomValues nếu HTTPnội bộ không córandomUUID. Báo phút/lấy đồ có timeout15giây bao phủ cả body, timeout chỉ mở đường xác minh trạng thái chứ không tự retry.
 
 ### Mẫu mẻ giặt cho C
 

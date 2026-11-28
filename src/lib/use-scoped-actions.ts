@@ -1,5 +1,6 @@
 'use client';
 import { useCallback, useEffect, useRef } from 'react';
+import { apiJson } from './api-json';
 
 /** Key the owner by account/building. A completed old mutation must never affect a new session. */
 export function useScopedActions(onRefresh: () => Promise<void>, onSessionExpired: () => void) {
@@ -21,11 +22,20 @@ export function useScopedActions(onRefresh: () => Promise<void>, onSessionExpire
       return response;
     } finally { controllers.current.delete(controller); }
   }, []);
+  const scopedJson = useCallback(async <T,>(url: string, init?: RequestInit) => {
+    if (!active.current) throw new DOMException('Scope replaced', 'AbortError');
+    const controller = new AbortController(); controllers.current.add(controller);
+    try {
+      const response = await apiJson<T>(url, { ...init, signal: controller.signal });
+      if (!active.current || controller.signal.aborted) throw new DOMException('Scope replaced', 'AbortError');
+      return response;
+    } finally { controllers.current.delete(controller); }
+  }, []);
   const refresh = useCallback(async () => {
     if (!active.current) throw new DOMException('Scope replaced', 'AbortError');
     await callbacks.current.onRefresh();
     if (!active.current) throw new DOMException('Scope replaced', 'AbortError');
   }, []);
   const sessionExpired = useCallback(() => { if (active.current) callbacks.current.onSessionExpired(); }, []);
-  return { scopedFetch, refresh, sessionExpired };
+  return { scopedFetch, scopedJson, refresh, sessionExpired };
 }

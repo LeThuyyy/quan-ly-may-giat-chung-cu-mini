@@ -16,6 +16,7 @@ public class WashController {
     public record PhysicalRequest(@NotNull Boolean physicallyConfirmed) {}
     public record TransferRequest(@NotNull UUID holdId, @NotNull Boolean physicallyConfirmed) {}
     public record RunningRequest(Integer remainingMinutes) {}
+    public record OwnerRemainingRequest(Integer remainingMinutes, UUID clientRequestId) {}
     public record ResolveRequest(@NotBlank String action, Integer remainingMinutes, boolean physicallyConfirmed) {}
 
     @GetMapping("/wash-cycles/me")
@@ -42,8 +43,8 @@ public class WashController {
     }
     @PostMapping("/wash-cycles/{cycleId}/remaining")
     public WashService.CycleView ownerRemaining(Authentication auth, @PathVariable UUID buildingId, @PathVariable UUID cycleId,
-                                                @RequestBody RunningRequest body) {
-        return wash.ownerRemaining(auth.getName(), buildingId, cycleId, body.remainingMinutes());
+                                                @RequestBody OwnerRemainingRequest body) {
+        return wash.ownerRemaining(auth.getName(), buildingId, cycleId, body.remainingMinutes(), body.clientRequestId());
     }
     @PostMapping("/holds/{holdId}/report-running")
     public WashService.CycleView running(Authentication auth, @PathVariable UUID buildingId, @PathVariable UUID holdId,

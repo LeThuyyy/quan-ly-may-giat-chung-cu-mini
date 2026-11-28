@@ -72,6 +72,9 @@ export default function AuthSection({
         return `Mật khẩu cần ít nhất ${MIN_REGISTER_PASSWORD} ký tự.`;
       }
       if (password.length > 128) return 'Mật khẩu tối đa 128 ký tự.';
+      if (authMode === 'register' && new TextEncoder().encode(password).length > 72) {
+        return 'Mật khẩu tối đa 72 byte UTF-8; ký tự tiếng Việt có thể chiếm nhiều byte.';
+      }
     }
 
     if (field === 'confirmPassword' && authMode === 'register') {
@@ -89,7 +92,7 @@ export default function AuthSection({
     if (authMode === 'register') {
       const trimmedDisplay = displayName.trim();
       if (!trimmedDisplay || trimmedDisplay.length > 80) return true;
-      if (password.length < MIN_REGISTER_PASSWORD) return true;
+      if (password.length < MIN_REGISTER_PASSWORD || new TextEncoder().encode(password).length > 72) return true;
       if (confirmPassword !== password) return true;
     }
     return false;
@@ -240,7 +243,7 @@ export default function AuthSection({
                 showStrength={isRegister}
                 hint={
                   isRegister
-                    ? 'Sử dụng ít nhất 12 ký tự, kết hợp chữ hoa, chữ thường, số hoặc ký tự đặc biệt.'
+                    ? 'Ít nhất 12 ký tự, tối đa 72 byte UTF-8 (ký tự tiếng Việt có thể chiếm nhiều byte). Kết hợp chữ, số hoặc ký tự đặc biệt.'
                     : undefined
                 }
                 error={getFieldError('password')}
