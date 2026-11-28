@@ -31,7 +31,105 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+function deferredResponse() {
+  let resolve!: (response: Response) => void;
+  const promise = new Promise<Response>((done) => { resolve = done; });
+  return { promise, resolve };
+}
+
+function mockManagerBuildings(mutate: (url: string, init?: RequestInit) => Promise<Response> | undefined) {
+  const buildings = [
+    { id: 'b-1', name: 'Chung cư Mini A', role: 'MANAGER', status: 'APPROVED' },
+    { id: 'b-2', name: 'Chung cư Mini B', role: 'MANAGER', status: 'APPROVED' },
+  ];
+  fetchMock.mockImplementation(async (input, init) => {
+    const url = String(input);
+    const mutation = mutate(url, init);
+    if (mutation) return mutation;
+    if (url === '/api/me') return jsonResponse({ id: 'mgr-1', username: 'manager1', displayName: 'Quản lý 1' });
+    if (url === '/api/buildings') return jsonResponse(buildings);
+    const building = buildings.find((item) => url.startsWith(`/api/buildings/${item.id}/`));
+    if (building && url.endsWith('/snapshot')) {
+      return jsonResponse({
+        building: {
+          id: building.id,
+          name: building.name,
+          machines: [{ id: `m-${building.id}`, label: `Máy ${building.name}`, status: 'AVAILABLE' }],
+          queue: [],
+        },
+        membership: building,
+        queueStatus: { state: 'NONE' },
+        holds: [],
+        myCycles: [],
+        previousCycle: null,
+        serverNow: new Date().toISOString(),
+      });
+    }
+    if (building && url.includes('/invitations?')) {
+      return jsonResponse({ items: [], page: 0, size: 20, hasNext: false });
+    }
+    if (building && (url.endsWith('/members') || url.endsWith('/members/pending') || url.endsWith('/wash-cycles/issues'))) {
+      return jsonResponse([]);
+    }
+    return jsonResponse({ error: `Unexpected URL: ${url}` }, 404);
+  });
+}
+
+function switchToBuilding(name: string) {
+  fireEvent.click(screen.getAllByRole('button', { name: /Chung cư Mini A.*Quản lý/ })[0]);
+  fireEvent.click(screen.getByRole('option', { name: new RegExp(name) }));
+}
+
 describe('LaundryApp integration', () => {
+  it('ignores an invite response from the previous building without replacing its snapshot or releasing a newer operation', async () => {
+    const inviteA = deferredResponse();
+    const inviteB = deferredResponse();
+    mockManagerBuildings((url, init) => {
+      if (init?.method !== 'POST') return;
+      if (url === '/api/buildings/b-1/invitations') return inviteA.promise;
+      if (url === '/api/buildings/b-2/invitations') return inviteB.promise;
+    });
+    render(<LaundryApp initialView="admin-invitations" />);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Tạo mã mời 7 ngày' }).hasAttribute('disabled')).toBe(false));
+    fireEvent.click(screen.getByRole('button', { name: 'Tạo mã mời 7 ngày' }));
+    switchToBuilding('Chung cư Mini B');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Tạo mã mời 7 ngày' }).hasAttribute('disabled')).toBe(false));
+    const snapshotsBefore = fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/snapshot')).length;
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tạo mã mời 7 ngày' }));
+    await act(async () => { inviteA.resolve(jsonResponse({ token: 'secret-token-A' })); });
+
+    expect(screen.queryByText('secret-token-A')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Tạo mã mời 7 ngày' }).hasAttribute('disabled')).toBe(true);
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/snapshot'))).toHaveLength(snapshotsBefore);
+    expect(screen.getByRole('heading', { name: 'Mã mời tham gia tòa' })).toBeTruthy();
+    expect(window.location.pathname).toContain('/b-2/');
+
+    await act(async () => { inviteB.resolve(jsonResponse({ token: 'secret-token-B' })); });
+    await waitFor(() => expect(screen.getByText('secret-token-B')).toBeTruthy());
+    expect(screen.getByRole('button', { name: 'Tạo mã mời 7 ngày' }).hasAttribute('disabled')).toBe(false);
+  });
+
+  it('does not refresh the previous building or show its maintenance result after switching', async () => {
+    const maintenance = deferredResponse();
+    mockManagerBuildings((url, init) => {
+      if (url === '/api/buildings/b-1/machines/m-b-1' && init?.method === 'PATCH') return maintenance.promise;
+    });
+    render(<LaundryApp initialView="admin-machines" />);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Đánh dấu bảo trì' }).hasAttribute('disabled')).toBe(false));
+    fireEvent.click(screen.getByRole('button', { name: 'Đánh dấu bảo trì' }));
+    switchToBuilding('Chung cư Mini B');
+    await waitFor(() => expect(screen.getByText('Máy Chung cư Mini B')).toBeTruthy());
+    const snapshotsBefore = fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/snapshot')).length;
+
+    await act(async () => { maintenance.resolve(jsonResponse({})); });
+
+    expect(screen.getByText('Máy Chung cư Mini B')).toBeTruthy();
+    expect(screen.queryByText(/Đã chuyển/)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Đánh dấu bảo trì' }).hasAttribute('disabled')).toBe(false);
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/snapshot'))).toHaveLength(snapshotsBefore);
+  });
+
   it('renders overview hold card and separates manager views into sidebar routes', async () => {
     const expiresAt = new Date(Date.now() + 8 * 60_000).toISOString();
 
